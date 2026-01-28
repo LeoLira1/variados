@@ -948,9 +948,7 @@ with tab1:
     patrim_total = patrim_br + patrim_us
     lucro_total = lucro_br + lucro_us
     
-    # Calcular porcentagens de alocação com segurança
-    pct_br = safe_division(patrim_br, patrim_total, 0.5) * 100
-    pct_us = safe_division(patrim_us, patrim_total, 0.5) * 100
+    # Calcular porcentagens
     pct_lucro = min(safe_division(abs(lucro_total), patrim_total * 0.05, 0) * 100, 100) if patrim_total > 0 else 0
     
     glow_class = "positive-glow" if lucro_total >= 0 else "negative-glow"
@@ -965,29 +963,24 @@ with tab1:
         background: linear-gradient(135deg, {bg_color} 0%, rgba(30, 30, 60, 0.4) 100%);
         border: 1px solid {border_color};
         padding: 2rem; margin: 1.5rem 0;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2rem; text-align: center;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2rem; text-align: center;">
             <div>
-                <div class="card-label">Patrimônio Total</div>
-                <div class="card-value card-value-lg">R$ {patrim_total:,.0f}</div>
-                <div class="card-subtitle">Em BRL e USD</div>
-            </div>
-            <div style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 2rem;">
                 <div class="card-label">Posição Hoje</div>
-                <div class="card-value" style="color: {var_color};">
+                <div class="card-value card-value-lg" style="color: {var_color};">
                     {'+' if var_total >= 0 else ''}R$ {var_total:,.0f}
                 </div>
                 <div class="card-subtitle">Variação diária</div>
             </div>
             <div style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 2rem;">
                 <div class="card-label">Lucro/Prejuízo</div>
-                <div class="card-value" style="color: {lucro_color};">
+                <div class="card-value card-value-lg" style="color: {lucro_color};">
                     {'+' if lucro_total >= 0 else ''}R$ {lucro_total:,.0f}
                 </div>
                 <div class="card-subtitle">vs Preço Médio</div>
             </div>
             <div style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 2rem;">
                 <div class="card-label">Cotação Dólar</div>
-                <div class="card-value">R$ {dolar:.2f}</div>
+                <div class="card-value card-value-lg">R$ {dolar:.2f}</div>
                 <div class="card-subtitle">USD/BRL</div>
             </div>
         </div>
@@ -1068,17 +1061,17 @@ with tab1:
         spark_data = get_sparkline(ticker)
         svg_spark = sparkline_svg(spark_data, is_positive=(var >= 0))
         glow = "positive-glow" if var >= 0 else "negative-glow"
-        color = "#a8e6cf" if var >= 0 else "#e6a8a8"
+        price_color = "#a8e6cf" if var >= 0 else "#e6a8a8"
         badge = "badge-positive" if var >= 0 else "badge-negative"
         arrow = "▲" if var >= 0 else "▼"
         
         with cols_st[i]:
             st.markdown(f"""
-            <div class="glass-card glass-dark {glow}" style="position: relative; overflow: hidden;">
+            <div class="glass-card {glow}" style="position: relative; overflow: hidden; background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
                     <div>
-                        <div class="card-label">{name}</div>
-                        <div class="card-value card-value-sm" style="color: {color};">R$ {price:.2f}</div>
+                        <div class="card-label" style="color: rgba(255,255,255,0.9); font-weight: 600;">{name}</div>
+                        <div class="card-value card-value-sm" style="color: {price_color};">R$ {price:.2f}</div>
                         <span class="badge {badge}">{arrow} {abs(var):.1f}%</span>
                     </div>
                     <div style="margin-top: -5px; margin-right: -10px;">{svg_spark}</div>
@@ -1096,16 +1089,16 @@ with tab2:
         # COMMODITIES
         st.markdown('<div class="section-title"><span class="section-icon">🌾</span> Commodities & Ativos</div>', unsafe_allow_html=True)
         commodities = {
-            "SOJA": ("SOYB", "🌱", "glass-green"),
-            "MILHO": ("CORN", "🌽", "glass-gold"),
-            "CAFÉ": ("JO", "☕", "glass-rose"),
-            "BRENT": ("BNO", "🛢️", "glass-dark"),
-            "OURO": ("GLD", "💰", "glass-gold"),
-            "BITCOIN": ("BTC-USD", "₿", "glass-purple")
+            "SOJA": ("SOYB", "🌱"),
+            "MILHO": ("CORN", "🌽"),
+            "CAFÉ": ("JO", "☕"),
+            "BRENT": ("BNO", "🛢️"),
+            "OURO": ("GLD", "💰"),
+            "BITCOIN": ("BTC-USD", "₿")
         }
         cols_comm = st.columns(3)
         
-        for i, (name, (ticker, emoji, cor)) in enumerate(commodities.items()):
+        for i, (name, (ticker, emoji)) in enumerate(commodities.items()):
             price, var = get_stock_data(ticker)
             price_display = f"${price:,.0f}" if name == "BITCOIN" else f"${price:.2f}"
             badge = "badge-positive" if var >= 0 else "badge-negative"
@@ -1113,11 +1106,11 @@ with tab2:
             
             with cols_comm[i % 3]:
                 st.markdown(f"""
-                <div class="glass-card {cor}">
-                    <div class="card-label">{emoji} {name}</div>
+                <div class="glass-card" style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);">
+                    <div class="card-label" style="color: rgba(255,255,255,0.9);">{emoji} {name}</div>
                     <div style="display: flex; justify-content: space-between; align-items: end;">
                         <div>
-                            <div class="card-value card-value-sm">{price_display}</div>
+                            <div class="card-value card-value-sm" style="color: rgba(255,255,255,0.95);">{price_display}</div>
                             <span class="badge {badge}">{arrow} {abs(var):.1f}%</span>
                         </div>
                     </div>
@@ -1127,48 +1120,42 @@ with tab2:
         # DIVIDENDOS PRÓXIMOS
         st.markdown('<div class="section-title"><span class="section-icon">💵</span> Próximos Proventos Estimados</div>', unsafe_allow_html=True)
         dividendos_mock = [
-            {"ticker": "BBAS3", "data": "Fev/2025", "valor": "R$ 2,84", "tipo": "JCP", "cor": "glass-blue"},
-            {"ticker": "BBSE3", "data": "Fev/2025", "valor": "R$ 1,15", "tipo": "DIV", "cor": "glass-gold"},
-            {"ticker": "ITUB4", "data": "Mar/2025", "valor": "Est.", "tipo": "JCP", "cor": "glass-dark"},
-            {"ticker": "PETR4", "data": "Mar/2025", "valor": "Est.", "tipo": "DIV", "cor": "glass-dark"},
+            {"ticker": "BBAS3", "data": "Fev/2025", "valor": "R$ 2,84", "tipo": "JCP"},
+            {"ticker": "BBSE3", "data": "Fev/2025", "valor": "R$ 1,15", "tipo": "DIV"},
+            {"ticker": "ITUB4", "data": "Mar/2025", "valor": "Est.", "tipo": "JCP"},
+            {"ticker": "PETR4", "data": "Mar/2025", "valor": "Est.", "tipo": "DIV"},
         ]
         cols_div = st.columns(len(dividendos_mock))
         
         for col, div in zip(cols_div, dividendos_mock):
             with col:
                 st.markdown(f"""
-                <div class="glass-card {div['cor']}" style="text-align: center;">
-                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 600;">{div['ticker']}</div>
-                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin: 0.3rem 0;">{div['data']}</div>
+                <div class="glass-card" style="text-align: center; background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);">
+                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 600; color: rgba(255,255,255,0.95);">{div['ticker']}</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7); margin: 0.3rem 0;">{div['data']}</div>
                     <div style="font-size: 1.1rem; color: #ffd700; font-weight: 500;">{div['valor']}</div>
-                    <div style="font-size: 0.65rem; background: rgba(255,215,0,0.15); display: inline-block; padding: 2px 8px; border-radius: 10px; margin-top: 5px;">{div['tipo']}</div>
+                    <div style="font-size: 0.65rem; background: rgba(255,215,0,0.2); color: #ffd700; display: inline-block; padding: 2px 8px; border-radius: 10px; margin-top: 5px;">{div['tipo']}</div>
                 </div>
                 """, unsafe_allow_html=True)
     
     with col_right:
         # DADOS DA CARTEIRA DETALHADOS
         st.markdown('<div class="section-title"><span class="section-icon">📋</span> Resumo</div>', unsafe_allow_html=True)
+        
+        # Cores para variação BR
+        var_br_color = "#a8e6cf" if var_br >= 0 else "#e6a8a8"
+        var_us_color = "#a8e6cf" if var_us >= 0 else "#e6a8a8"
+        
         st.markdown(f"""
         <div class="glass-card glass-blue">
-            <div class="card-label">🇧🇷 Brasil</div>
-            <div class="card-value">R$ {patrim_br:,.0f}</div>
-            <div class="card-subtitle">Var: R$ {var_br:+,.0f}</div>
+            <div class="card-label" style="color: rgba(255,255,255,0.8);">🇧🇷 Brasil</div>
+            <div class="card-value" style="color: rgba(255,255,255,0.95);">R$ {patrim_br:,.0f}</div>
+            <div class="card-subtitle" style="color: {var_br_color};">Var: R$ {var_br:+,.0f}</div>
         </div>
         <div class="glass-card glass-purple">
-            <div class="card-label">🇺🇸 EUA (em BRL)</div>
-            <div class="card-value">R$ {patrim_us:,.0f}</div>
-            <div class="card-subtitle">Var: R$ {var_us:+,.0f}</div>
-        </div>
-        <div class="glass-card glass-green">
-            <div class="card-label">Alocação BR/US</div>
-            <div style="margin-top: 0.5rem; background: rgba(0,0,0,0.3); height: 20px; border-radius: 10px; overflow: hidden; display: flex;">
-                <div style="width: {pct_br}%; background: linear-gradient(90deg, #667eea, #764ba2);"></div>
-                <div style="width: {pct_us}%; background: linear-gradient(90deg, #f093fb, #f5576c);"></div>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-top: 0.3rem; opacity: 0.7;">
-                <span>🇧🇷 {pct_br:.0f}%</span>
-                <span>🇺🇸 {pct_us:.0f}%</span>
-            </div>
+            <div class="card-label" style="color: rgba(255,255,255,0.8);">🇺🇸 EUA (em BRL)</div>
+            <div class="card-value" style="color: rgba(255,255,255,0.95);">R$ {patrim_us:,.0f}</div>
+            <div class="card-subtitle" style="color: {var_us_color};">Var: R$ {var_us:+,.0f}</div>
         </div>
         """, unsafe_allow_html=True)
         
