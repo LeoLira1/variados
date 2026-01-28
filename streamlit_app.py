@@ -576,6 +576,54 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
     return numerator / denominator
 
 
+def render_forecast_card(forecast: dict) -> str:
+    """Renderiza o card de previsão de 5 dias como HTML."""
+    if not forecast or "time" not in forecast:
+        return '<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>'
+    
+    try:
+        num_dias = min(5, len(forecast.get("time", [])))
+        if num_dias == 0:
+            return '<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>'
+        
+        dias_items = []
+        for i in range(num_dias):
+            try:
+                date = datetime.strptime(forecast["time"][i], "%Y-%m-%d")
+                day_name = DIAS_SEMANA_CURTO[date.weekday()]
+                code = forecast.get("weather_code", [0] * num_dias)[i]
+                emoji = WEATHER_CODES.get(code, ("☁️", ""))[0]
+                max_t = forecast.get("temperature_2m_max", [0] * num_dias)[i]
+                min_t = forecast.get("temperature_2m_min", [0] * num_dias)[i]
+                
+                dia_html = (
+                    '<div style="text-align:center;padding:0.8rem 0.4rem;'
+                    'background:rgba(255,255,255,0.03);border-radius:12px;'
+                    'border:1px solid rgba(255,255,255,0.05);flex:1;">'
+                    f'<div style="font-size:0.65rem;opacity:0.6;margin-bottom:4px;">{day_name}</div>'
+                    f'<div style="font-size:1.3rem;margin:0.2rem 0;">{emoji}</div>'
+                    f'<div style="font-size:0.75rem;font-weight:500;">{max_t:.0f}° '
+                    f'<span style="opacity:0.4;font-size:0.65rem;">{min_t:.0f}°</span></div>'
+                    '</div>'
+                )
+                dias_items.append(dia_html)
+            except (ValueError, IndexError, TypeError):
+                continue
+        
+        if not dias_items:
+            return '<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>'
+        
+        dias_joined = "".join(dias_items)
+        return (
+            '<div class="glass-card" style="padding:1rem;">'
+            '<div class="card-label" style="margin-bottom:0.8rem;">📅 Próximos 5 Dias</div>'
+            f'<div style="display:flex;gap:8px;">{dias_joined}</div>'
+            '</div>'
+        )
+    except Exception:
+        return '<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>'
+
+
 def sparkline_svg(data: list, is_positive: bool = True) -> str:
     """Gera SVG de sparkline para visualização de tendência."""
     if not data or len(data) < 2:
@@ -889,40 +937,8 @@ with tab1:
     # PREVISÃO 5 DIAS
     forecast = get_weather_forecast(-18.4486, -50.4519)
     with col3:
-        if forecast and "time" in forecast:
-            dias_html = []
-            num_dias = min(5, len(forecast.get("time", [])))
-            
-            for i in range(num_dias):
-                try:
-                    date = datetime.strptime(forecast["time"][i], "%Y-%m-%d")
-                    day_name = DIAS_SEMANA_CURTO[date.weekday()]
-                    code = forecast.get("weather_code", [0] * num_dias)[i]
-                    emoji = WEATHER_CODES.get(code, ("☁️", ""))[0]
-                    max_t = forecast.get("temperature_2m_max", [0] * num_dias)[i]
-                    min_t = forecast.get("temperature_2m_min", [0] * num_dias)[i]
-                    
-                    dias_html.append(f"""
-                    <div style="text-align: center; padding: 0.8rem 0.4rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); flex: 1;">
-                        <div style="font-size: 0.65rem; opacity: 0.6; margin-bottom: 4px;">{day_name}</div>
-                        <div style="font-size: 1.3rem; margin: 0.2rem 0;">{emoji}</div>
-                        <div style="font-size: 0.75rem; font-weight: 500;">{max_t:.0f}° <span style="opacity: 0.4; font-size: 0.65rem;">{min_t:.0f}°</span></div>
-                    </div>
-                    """)
-                except (ValueError, IndexError, TypeError):
-                    continue
-            
-            if dias_html:
-                st.markdown(f"""
-                <div class="glass-card" style="padding: 1rem;">
-                    <div class="card-label" style="margin-bottom: 0.8rem;">📅 Próximos 5 Dias</div>
-                    <div style="display: flex; gap: 8px;">{"".join(dias_html)}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>', unsafe_allow_html=True)
+        forecast_html = render_forecast_card(forecast)
+        st.markdown(forecast_html, unsafe_allow_html=True)
     
     # HERO CARD CARTEIRA
     dolar = get_dolar()
