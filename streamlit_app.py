@@ -598,12 +598,12 @@ def render_forecast_card(forecast: dict) -> str:
                 
                 dia_html = (
                     '<div style="text-align:center;padding:0.8rem 0.4rem;'
-                    'background:rgba(255,255,255,0.03);border-radius:12px;'
-                    'border:1px solid rgba(255,255,255,0.05);flex:1;">'
-                    f'<div style="font-size:0.65rem;opacity:0.6;margin-bottom:4px;">{day_name}</div>'
-                    f'<div style="font-size:1.3rem;margin:0.2rem 0;">{emoji}</div>'
-                    f'<div style="font-size:0.75rem;font-weight:500;">{max_t:.0f}° '
-                    f'<span style="opacity:0.4;font-size:0.65rem;">{min_t:.0f}°</span></div>'
+                    'background:rgba(255,255,255,0.08);border-radius:12px;'
+                    'border:1px solid rgba(255,255,255,0.1);flex:1;">'
+                    f'<div style="font-size:0.75rem;color:rgba(255,255,255,0.95);font-weight:600;margin-bottom:4px;">{day_name}</div>'
+                    f'<div style="font-size:1.4rem;margin:0.3rem 0;">{emoji}</div>'
+                    f'<div style="font-size:0.85rem;font-weight:600;color:rgba(255,255,255,0.95);">{max_t:.0f}°</div>'
+                    f'<div style="font-size:0.7rem;color:rgba(255,255,255,0.6);">{min_t:.0f}°</div>'
                     '</div>'
                 )
                 dias_items.append(dia_html)
@@ -616,7 +616,7 @@ def render_forecast_card(forecast: dict) -> str:
         dias_joined = "".join(dias_items)
         return (
             '<div class="glass-card" style="padding:1rem;">'
-            '<div class="card-label" style="margin-bottom:0.8rem;">📅 Próximos 5 Dias</div>'
+            '<div class="card-label" style="margin-bottom:0.8rem;color:rgba(255,255,255,0.9);">📅 Próximos 5 Dias</div>'
             f'<div style="display:flex;gap:8px;">{dias_joined}</div>'
             '</div>'
         )
@@ -862,6 +862,42 @@ def get_tmdb_trending() -> list:
         return []
 
 
+@st.cache_data(ttl=900)
+def get_ibov_movers() -> tuple:
+    """Obtém as maiores altas e quedas do Ibovespa."""
+    # Lista de ações do Ibovespa para monitorar
+    acoes_ibov = [
+        "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "BBAS3.SA",
+        "ABEV3.SA", "WEGE3.SA", "RENT3.SA", "PRIO3.SA", "RADL3.SA",
+        "JBSS3.SA", "SUZB3.SA", "GGBR4.SA", "CSNA3.SA", "USIM5.SA",
+        "MGLU3.SA", "VIIA3.SA", "CVCB3.SA", "AZUL4.SA", "GOLL4.SA",
+        "EMBR3.SA", "BEEF3.SA", "MRFG3.SA", "CPLE6.SA", "ELET3.SA",
+        "CMIG4.SA", "SBSP3.SA", "CSAN3.SA", "RAIZ4.SA", "VBBR3.SA"
+    ]
+    
+    resultados = []
+    for ticker in acoes_ibov:
+        try:
+            price, var = get_stock_data(ticker)
+            if price > 0:
+                nome = ticker.replace(".SA", "")
+                resultados.append({"ticker": nome, "price": price, "var": var})
+        except Exception:
+            continue
+    
+    if not resultados:
+        return [], []
+    
+    # Ordenar por variação
+    ordenados = sorted(resultados, key=lambda x: x["var"], reverse=True)
+    
+    # Top 4 altas e top 4 quedas
+    altas = ordenados[:4]
+    quedas = ordenados[-4:][::-1]  # Inverter para mostrar maior queda primeiro
+    
+    return altas, quedas
+
+
 # ═══════════════════════════════════════════════════════════════════
 # HORA E DATA
 # ═══════════════════════════════════════════════════════════════════
@@ -990,63 +1026,22 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
     
-    # FEAR & GREED + CONVERSOR
-    col_fg, col_conv = st.columns([1, 2])
+    # FEAR & GREED
+    col_space1, col_fg, col_space2 = st.columns([1, 2, 1])
     
     with col_fg:
         fear_val, fear_txt = get_fear_greed()
         gauge_color = f"hsl({fear_val * 1.2}, 70%, 50%)"
         st.markdown(f"""
-        <div class="glass-card" style="text-align: center; height: 100%;">
-            <div class="card-label">🧠 Fear & Greed</div>
-            <div style="font-size: 2.5rem; font-weight: 700; color: {gauge_color}; margin: 0.5rem 0;">{fear_val}</div>
-            <div style="background: linear-gradient(90deg, #e74c3c 0%, #f39c12 50%, #27ae60 100%); height: 6px; border-radius: 3px; position: relative; margin: 10px 0;">
-                <div style="position: absolute; left: {fear_val}%; top: -3px; width: 12px; height: 12px; background: white; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.5); transform: translateX(-50%);"></div>
+        <div class="glass-card" style="text-align: center;">
+            <div class="card-label" style="justify-content: center;">🧠 Fear & Greed Index (Crypto)</div>
+            <div style="font-size: 3rem; font-weight: 700; color: {gauge_color}; margin: 0.5rem 0;">{fear_val}</div>
+            <div style="background: linear-gradient(90deg, #e74c3c 0%, #f39c12 50%, #27ae60 100%); height: 8px; border-radius: 4px; position: relative; margin: 15px 0;">
+                <div style="position: absolute; left: {fear_val}%; top: -4px; width: 16px; height: 16px; background: white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5); transform: translateX(-50%);"></div>
             </div>
-            <div class="card-subtitle" style="text-transform: uppercase; letter-spacing: 1px; margin-top: 0.5rem;">{fear_txt}</div>
+            <div class="card-subtitle" style="text-transform: uppercase; letter-spacing: 2px; margin-top: 0.5rem; font-size: 1rem;">{fear_txt}</div>
         </div>
         """, unsafe_allow_html=True)
-    
-    with col_conv:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-label" style="margin-bottom: 1rem;">💱 Conversor Rápido</div>', unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns([2, 1, 2])
-        with c1:
-            valor_conv = st.number_input("Valor", min_value=0.0, value=1000.0, label_visibility="collapsed", key="conv_val")
-            moeda_origem = st.selectbox("Origem", ["USD", "BRL", "BTC"], index=0, label_visibility="collapsed", key="conv_from")
-        with c2:
-            st.markdown("<div style='text-align: center; padding-top: 1.2rem; font-size: 1.5rem; color: rgba(255,255,255,0.5);'>⇄</div>", unsafe_allow_html=True)
-        with c3:
-            moeda_dest = st.selectbox("Destino", ["BRL", "USD", "BTC"], index=0, label_visibility="collapsed", key="conv_to")
-            
-            btc_price, _ = get_stock_data("BTC-USD")
-            btc_price = btc_price if btc_price > 0 else 100000  # Fallback
-            
-            # Taxas de conversão (tudo para USD como base)
-            rates_to_usd = {"USD": 1.0, "BRL": 1.0 / dolar, "BTC": btc_price}
-            rates_from_usd = {"USD": 1.0, "BRL": dolar, "BTC": 1.0 / btc_price}
-            
-            if moeda_origem == moeda_dest:
-                resultado = valor_conv
-            else:
-                # Converter para USD primeiro, depois para moeda destino
-                em_usd = valor_conv * rates_to_usd.get(moeda_origem, 1)
-                resultado = em_usd * rates_from_usd.get(moeda_dest, 1)
-            
-            # Formatação do resultado
-            if moeda_dest == "BTC":
-                resultado_fmt = f"{resultado:.8f}"
-            else:
-                resultado_fmt = f"{resultado:,.2f}"
-            
-            st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 0.8rem; text-align: center; margin-top: 0.3rem; border: 1px solid rgba(255,255,255,0.1);">
-                <div style="font-size: 1.5rem; font-weight: 600; color: #a8e6cf;">{resultado_fmt}</div>
-                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">{moeda_dest}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     # AÇÕES DESTAQUE COM SPARKLINES
     st.markdown('<div class="section-title"><span class="section-icon">📈</span> Ações em Destaque</div>', unsafe_allow_html=True)
@@ -1117,48 +1112,44 @@ with tab2:
                 </div>
                 """, unsafe_allow_html=True)
         
-        # DIVIDENDOS PRÓXIMOS
-        st.markdown('<div class="section-title"><span class="section-icon">💵</span> Próximos Proventos Estimados</div>', unsafe_allow_html=True)
-        dividendos_mock = [
-            {"ticker": "BBAS3", "data": "Fev/2025", "valor": "R$ 2,84", "tipo": "JCP"},
-            {"ticker": "BBSE3", "data": "Fev/2025", "valor": "R$ 1,15", "tipo": "DIV"},
-            {"ticker": "ITUB4", "data": "Mar/2025", "valor": "Est.", "tipo": "JCP"},
-            {"ticker": "PETR4", "data": "Mar/2025", "valor": "Est.", "tipo": "DIV"},
-        ]
-        cols_div = st.columns(len(dividendos_mock))
+        # MAIORES ALTAS E QUEDAS DO DIA
+        st.markdown('<div class="section-title"><span class="section-icon">📊</span> Maiores Variações do Dia</div>', unsafe_allow_html=True)
         
-        for col, div in zip(cols_div, dividendos_mock):
-            with col:
+        altas, quedas = get_ibov_movers()
+        
+        col_altas, col_quedas = st.columns(2)
+        
+        with col_altas:
+            st.markdown('<div class="card-label" style="margin-bottom: 0.8rem; color: #a8e6cf; font-size: 0.9rem;">🚀 Maiores Altas</div>', unsafe_allow_html=True)
+            for acao in altas:
                 st.markdown(f"""
-                <div class="glass-card" style="text-align: center; background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);">
-                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 600; color: rgba(255,255,255,0.95);">{div['ticker']}</div>
-                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7); margin: 0.3rem 0;">{div['data']}</div>
-                    <div style="font-size: 1.1rem; color: #ffd700; font-weight: 500;">{div['valor']}</div>
-                    <div style="font-size: 0.65rem; background: rgba(255,215,0,0.2); color: #ffd700; display: inline-block; padding: 2px 8px; border-radius: 10px; margin-top: 5px;">{div['tipo']}</div>
+                <div class="glass-card positive-glow" style="padding: 1rem; margin-bottom: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 600; color: rgba(255,255,255,0.95);">{acao['ticker']}</div>
+                            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7);">R$ {acao['price']:.2f}</div>
+                        </div>
+                        <div class="badge badge-positive" style="font-size: 0.9rem; padding: 6px 12px;">▲ {acao['var']:.2f}%</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col_quedas:
+            st.markdown('<div class="card-label" style="margin-bottom: 0.8rem; color: #e6a8a8; font-size: 0.9rem;">📉 Maiores Quedas</div>', unsafe_allow_html=True)
+            for acao in quedas:
+                st.markdown(f"""
+                <div class="glass-card negative-glow" style="padding: 1rem; margin-bottom: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 600; color: rgba(255,255,255,0.95);">{acao['ticker']}</div>
+                            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7);">R$ {acao['price']:.2f}</div>
+                        </div>
+                        <div class="badge badge-negative" style="font-size: 0.9rem; padding: 6px 12px;">▼ {abs(acao['var']):.2f}%</div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
     
     with col_right:
-        # DADOS DA CARTEIRA DETALHADOS
-        st.markdown('<div class="section-title"><span class="section-icon">📋</span> Resumo</div>', unsafe_allow_html=True)
-        
-        # Cores para variação BR
-        var_br_color = "#a8e6cf" if var_br >= 0 else "#e6a8a8"
-        var_us_color = "#a8e6cf" if var_us >= 0 else "#e6a8a8"
-        
-        st.markdown(f"""
-        <div class="glass-card glass-blue">
-            <div class="card-label" style="color: rgba(255,255,255,0.8);">🇧🇷 Brasil</div>
-            <div class="card-value" style="color: rgba(255,255,255,0.95);">R$ {patrim_br:,.0f}</div>
-            <div class="card-subtitle" style="color: {var_br_color};">Var: R$ {var_br:+,.0f}</div>
-        </div>
-        <div class="glass-card glass-purple">
-            <div class="card-label" style="color: rgba(255,255,255,0.8);">🇺🇸 EUA (em BRL)</div>
-            <div class="card-value" style="color: rgba(255,255,255,0.95);">R$ {patrim_us:,.0f}</div>
-            <div class="card-subtitle" style="color: {var_us_color};">Var: R$ {var_us:+,.0f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
         # IBOVESPA
         ibov, ibov_var = get_stock_data("^BVSP")
         ibov_glow = "positive-glow" if ibov_var >= 0 else "negative-glow"
