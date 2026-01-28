@@ -6,6 +6,26 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 import random
 import pytz
+import locale
+
+# Tentar configurar locale para português brasileiro
+try:
+    locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+except locale.Error:
+    try:
+        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')
+    except locale.Error:
+        pass  # Usa fallback manual
+
+# Mapeamento de meses em português (fallback)
+MESES_PT = {
+    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
+    5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+    9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
+}
+
+DIAS_SEMANA_PT = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+DIAS_SEMANA_CURTO = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
 # Configuração da página
 st.set_page_config(
@@ -15,7 +35,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS GLASSMORPHISM CINEMATOGRÁFICO + MELHORIAS
+# CSS GLASSMORPHISM CINEMATOGRÁFICO
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
@@ -421,21 +441,6 @@ st.markdown("""
         gap: 4px;
     }
     
-    /* Animação shimmer */
-    @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-    }
-    
-    .shimmer-effect {
-        background: linear-gradient(90deg, 
-            transparent 0%, 
-            rgba(255, 255, 255, 0.05) 50%, 
-            transparent 100%);
-        background-size: 200% 100%;
-        animation: shimmer 3s ease-in-out infinite;
-    }
-    
     /* Tabs personalizadas */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -476,7 +481,9 @@ st.markdown("""
 <div class="orb orb-3"></div>
 """, unsafe_allow_html=True)
 
-# CARTEIRAS
+# ═══════════════════════════════════════════════════════════════════
+# CARTEIRAS DE INVESTIMENTO
+# ═══════════════════════════════════════════════════════════════════
 CARTEIRA_BR = {
     "PRIO3.SA": (267, 42.38), "ALUP11.SA": (159, 28.79), "BBAS3.SA": (236, 27.24),
     "MOVI3.SA": (290, 6.82), "AGRO3.SA": (135, 24.98), "VALE3.SA": (25, 61.38),
@@ -500,7 +507,9 @@ CARTEIRA_US = {
     "MAGS": (0.09928, 54.19), "INTR": (0.77762, 6.43),
 }
 
+# ═══════════════════════════════════════════════════════════════════
 # DADOS AUXILIARES
+# ═══════════════════════════════════════════════════════════════════
 EMPRESAS_IA = [
     {"nome": "OpenAI", "query": "OpenAI ChatGPT", "emoji": "🟢", "cor": "glass-green"},
     {"nome": "Claude", "query": "Anthropic Claude AI", "emoji": "🟠", "cor": "glass-rose"},
@@ -529,148 +538,302 @@ CITACOES = [
 ]
 
 TMDB_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI5NzhlZTAxMTg0NmZkNGEzODFlMjE5NzIxNDA3ZTcxMyIsIm5iZiI6MTc2OTI4NzY2NS41NDQsInN1YiI6IjY5NzUyZmYxMjBjYTQ5ZjZiOGFlMmYzOSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.5sSTiI-dCh5kfrqAFgGRLS4Ba-X_zv0twE6KnRDjf0g"
-TMDB_GENRES = {28: "Ação", 12: "Aventura", 16: "Animação", 35: "Comédia", 80: "Crime", 99: "Documentário", 18: "Drama", 10751: "Família", 14: "Fantasia", 36: "História", 27: "Terror", 10402: "Música", 9648: "Mistério", 10749: "Romance", 878: "Ficção Científica", 10759: "Ação & Aventura", 10765: "Sci-Fi & Fantasia"}
 
-# FUNÇÕES CACHEADAS
+TMDB_GENRES = {
+    28: "Ação", 12: "Aventura", 16: "Animação", 35: "Comédia", 80: "Crime",
+    99: "Documentário", 18: "Drama", 10751: "Família", 14: "Fantasia",
+    36: "História", 27: "Terror", 10402: "Música", 9648: "Mistério",
+    10749: "Romance", 878: "Ficção Científica", 10759: "Ação & Aventura",
+    10765: "Sci-Fi & Fantasia"
+}
+
+WEATHER_CODES = {
+    0: ("☀️", "Céu limpo"), 1: ("🌤️", "Parcial"), 2: ("⛅", "Nublado"),
+    3: ("☁️", "Fechado"), 45: ("🌫️", "Neblina"), 48: ("🌫️", "Neblina"),
+    51: ("🌦️", "Chuvisco"), 53: ("🌦️", "Chuvisco"), 55: ("🌦️", "Chuvisco"),
+    61: ("🌧️", "Chuva leve"), 63: ("🌧️", "Chuva"), 65: ("🌧️", "Chuva forte"),
+    71: ("🌨️", "Neve leve"), 73: ("🌨️", "Neve"), 75: ("🌨️", "Neve forte"),
+    80: ("🌦️", "Pancadas"), 81: ("🌦️", "Pancadas"), 82: ("🌦️", "Pancadas"),
+    95: ("⛈️", "Tempestade"), 96: ("⛈️", "Tempestade"), 99: ("⛈️", "Tempestade")
+}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FUNÇÕES AUXILIARES
+# ═══════════════════════════════════════════════════════════════════
+def format_data_pt(dt: datetime) -> str:
+    """Formata data em português brasileiro."""
+    dia = dt.day
+    mes = MESES_PT.get(dt.month, str(dt.month))
+    ano = dt.year
+    return f"{dia} de {mes}, {ano}"
+
+
+def safe_division(numerator: float, denominator: float, default: float = 0.0) -> float:
+    """Divisão segura evitando divisão por zero."""
+    if denominator == 0:
+        return default
+    return numerator / denominator
+
+
+def sparkline_svg(data: list, is_positive: bool = True) -> str:
+    """Gera SVG de sparkline para visualização de tendência."""
+    if not data or len(data) < 2:
+        return ""
+    
+    try:
+        color = "#a8e6cf" if is_positive else "#e6a8a8"
+        width, height = 60, 25
+        min_val, max_val = min(data), max(data)
+        range_val = max_val - min_val if max_val != min_val else 1
+        
+        points = []
+        for i, val in enumerate(data):
+            x = (i / (len(data) - 1)) * width
+            y = height - ((val - min_val) / range_val) * height * 0.8 - 2
+            points.append(f"{x:.1f},{y:.1f}")
+        
+        last_point = points[-1].split(",")
+        cx, cy = last_point[0], last_point[1]
+        
+        return f'''<svg width="{width}" height="{height}" style="opacity: 0.8;">
+            <polyline points="{" ".join(points)}" fill="none" stroke="{color}" 
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="{cx}" cy="{cy}" r="2.5" fill="{color}"/>
+        </svg>'''
+    except (ValueError, IndexError, TypeError):
+        return ""
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FUNÇÕES DE DADOS COM CACHE
+# ═══════════════════════════════════════════════════════════════════
 @st.cache_data(ttl=900)
-def get_weather(lat, lon):
+def get_weather(lat: float, lon: float) -> dict:
+    """Obtém dados climáticos atuais."""
+    default = {
+        "temp": "--", "wind": "--", "humidity": "--",
+        "icon": "☁️", "descricao": "Indisponível", "precipitacao": 0
+    }
     try:
         url = "https://api.open-meteo.com/v1/forecast"
-        params = {"latitude": lat, "longitude": lon, "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation", "timezone": "America/Sao_Paulo"}
-        data = requests.get(url, params=params, timeout=5).json().get("current", {})
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation",
+            "timezone": "America/Sao_Paulo"
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json().get("current", {})
+        
         code = data.get("weather_code", 0)
-        weather_map = {0: ("☀️", "Céu limpo"), 1: ("🌤️", "Parcial"), 2: ("⛅", "Nublado"), 3: ("☁️", "Fechado"), 45: ("🌫️", "Neblina"), 51: ("🌦️", "Chuvisco"), 61: ("🌧️", "Chuva"), 80: ("🌦️", "Pancadas"), 95: ("⛈️", "Tempestade")}
-        icon, desc = weather_map.get(code, ("☁️", "Nublado"))
-        return {"temp": data.get("temperature_2m", "--"), "wind": data.get("wind_speed_10m", "--"), "humidity": data.get("relative_humidity_2m", "--"), "icon": icon, "descricao": desc, "precipitacao": data.get("precipitation", 0)}
-    except:
-        return {"temp": "--", "wind": "--", "humidity": "--", "icon": "☁️", "descricao": "Erro", "precipitacao": 0}
+        icon, desc = WEATHER_CODES.get(code, ("☁️", "Nublado"))
+        
+        return {
+            "temp": data.get("temperature_2m", "--"),
+            "wind": data.get("wind_speed_10m", "--"),
+            "humidity": data.get("relative_humidity_2m", "--"),
+            "icon": icon,
+            "descricao": desc,
+            "precipitacao": data.get("precipitation", 0)
+        }
+    except requests.RequestException:
+        return default
+    except (KeyError, ValueError, TypeError):
+        return default
+
 
 @st.cache_data(ttl=3600)
-def get_weather_forecast(lat, lon):
+def get_weather_forecast(lat: float, lon: float) -> dict:
+    """Obtém previsão do tempo para os próximos dias."""
     try:
         url = "https://api.open-meteo.com/v1/forecast"
-        params = {"latitude": lat, "longitude": lon, "daily": "temperature_2m_max,temperature_2m_min,weather_code", "timezone": "America/Sao_Paulo"}
-        return requests.get(url, params=params, timeout=5).json().get("daily", {})
-    except:
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "temperature_2m_max,temperature_2m_min,weather_code",
+            "timezone": "America/Sao_Paulo"
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        return response.json().get("daily", {})
+    except requests.RequestException:
+        return {}
+    except (KeyError, ValueError):
         return {}
 
+
 @st.cache_data(ttl=900)
-def get_stock_data(ticker):
+def get_stock_data(ticker: str) -> tuple:
+    """Obtém preço atual e variação de uma ação."""
     try:
         hist = yf.Ticker(ticker).history(period="2d")
         if len(hist) >= 1:
-            atual = hist['Close'].iloc[-1]
-            anterior = hist['Close'].iloc[-2] if len(hist) > 1 else atual
-            return atual, ((atual - anterior) / anterior) * 100
+            atual = float(hist['Close'].iloc[-1])
+            anterior = float(hist['Close'].iloc[-2]) if len(hist) > 1 else atual
+            variacao = safe_division((atual - anterior), anterior, 0) * 100
+            return atual, variacao
         return 0.0, 0.0
-    except:
+    except Exception:
         return 0.0, 0.0
 
+
 @st.cache_data(ttl=900)
-def get_sparkline(ticker):
+def get_sparkline(ticker: str) -> list:
+    """Obtém histórico de preços para sparkline."""
     try:
         hist = yf.Ticker(ticker).history(period="5d")
-        return hist['Close'].tolist() if not hist.empty else []
-    except:
+        if not hist.empty:
+            return [float(x) for x in hist['Close'].tolist()]
+        return []
+    except Exception:
         return []
 
-@st.cache_data(ttl=900)
-def get_dolar():
-    try:
-        hist = yf.Ticker("USDBRL=X").history(period="1d")
-        return hist['Close'].iloc[-1] if len(hist) >= 1 else 6.0
-    except:
-        return 6.0
 
 @st.cache_data(ttl=900)
-def calcular_carteira(carteira, dolar=1):
-    var, patrim, custo = 0.0, 0.0, 0.0
+def get_dolar() -> float:
+    """Obtém cotação do dólar."""
+    try:
+        hist = yf.Ticker("USDBRL=X").history(period="1d")
+        if len(hist) >= 1:
+            return float(hist['Close'].iloc[-1])
+        return 6.0
+    except Exception:
+        return 6.0
+
+
+@st.cache_data(ttl=900)
+def calcular_carteira(carteira: dict, dolar: float = 1.0) -> tuple:
+    """Calcula variação, patrimônio e lucro da carteira."""
+    variacao_total = 0.0
+    patrimonio_total = 0.0
+    custo_total = 0.0
+    
     for ticker, (qtd, pm) in carteira.items():
         try:
             hist = yf.Ticker(ticker).history(period="2d")
             if len(hist) >= 1:
-                atual = hist['Close'].iloc[-1]
-                anterior = hist['Close'].iloc[-2] if len(hist) > 1 else atual
-                var += (atual - anterior) * qtd * dolar
-                patrim += atual * qtd * dolar
-                custo += pm * qtd * dolar
-        except:
+                atual = float(hist['Close'].iloc[-1])
+                anterior = float(hist['Close'].iloc[-2]) if len(hist) > 1 else atual
+                variacao_total += (atual - anterior) * qtd * dolar
+                patrimonio_total += atual * qtd * dolar
+                custo_total += pm * qtd * dolar
+        except Exception:
             continue
-    return var, patrim, patrim - custo
+    
+    lucro_total = patrimonio_total - custo_total
+    return variacao_total, patrimonio_total, lucro_total
+
 
 @st.cache_data(ttl=600)
-def get_news(query):
+def get_news(query: str, max_items: int = 4) -> list:
+    """Obtém notícias do Google News RSS."""
     try:
         data_limite = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
-        url = f"https://news.google.com/rss/search?q={quote(f'{query} after:{data_limite}')}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-        return feedparser.parse(requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10).content).entries[:4]
-    except:
+        encoded_query = quote(f'{query} after:{data_limite}')
+        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+        
+        response = requests.get(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        feed = feedparser.parse(response.content)
+        return feed.entries[:max_items]
+    except requests.RequestException:
+        return []
+    except Exception:
         return []
 
+
 @st.cache_data(ttl=600)
-def get_single_news(query):
-    try:
-        data_limite = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
-        url = f"https://news.google.com/rss/search?q={quote(f'{query} after:{data_limite}')}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-        entries = feedparser.parse(requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10).content).entries
-        return entries[0] if entries else None
-    except:
-        return None
+def get_single_news(query: str):
+    """Obtém uma única notícia do Google News RSS."""
+    entries = get_news(query, max_items=1)
+    return entries[0] if entries else None
+
 
 @st.cache_data(ttl=3600)
-def get_fear_greed():
+def get_fear_greed() -> tuple:
+    """Obtém índice Fear & Greed do mercado cripto."""
     try:
-        data = requests.get("https://api.alternative.me/fng/?limit=1&format=json", timeout=5).json()['data'][0]
+        response = requests.get(
+            "https://api.alternative.me/fng/?limit=1&format=json",
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()['data'][0]
         return int(data['value']), data['value_classification']
-    except:
+    except requests.RequestException:
+        return 50, "Neutral"
+    except (KeyError, ValueError, IndexError):
         return 50, "Neutral"
 
+
 @st.cache_data(ttl=3600)
-def get_tmdb_trending():
+def get_tmdb_trending() -> list:
+    """Obtém filmes e séries em alta do TMDB."""
     if not TMDB_API_KEY:
-        return None
+        return []
+    
     try:
-        headers = {"accept": "application/json", "Authorization": f"Bearer {TMDB_API_KEY}"}
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {TMDB_API_KEY}"
+        }
         resultados = []
-        for url, tipo in [("https://api.themoviedb.org/3/trending/movie/week?language=pt-BR", "Filme"), ("https://api.themoviedb.org/3/trending/tv/week?language=pt-BR", "Série")]:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                for item in r.json().get("results", [])[:6]:
+        
+        endpoints = [
+            ("https://api.themoviedb.org/3/trending/movie/week?language=pt-BR", "Filme", "title"),
+            ("https://api.themoviedb.org/3/trending/tv/week?language=pt-BR", "Série", "name")
+        ]
+        
+        for url, tipo, title_key in endpoints:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                for item in response.json().get("results", [])[:6]:
                     generos = [TMDB_GENRES.get(g, "") for g in item.get("genre_ids", [])[:2]]
-                    resultados.append({"titulo": item.get("title" if tipo == "Filme" else "name", "Sem título"), "tipo": tipo, "genero": "/".join([g for g in generos if g]) or "Drama", "nota": f"{item.get('vote_average', 0):.1f}", "onde": "Em alta 🔥"})
+                    generos_str = "/".join([g for g in generos if g]) or "Drama"
+                    nota = item.get('vote_average', 0)
+                    
+                    resultados.append({
+                        "titulo": item.get(title_key, "Sem título"),
+                        "tipo": tipo,
+                        "genero": generos_str,
+                        "nota": f"{nota:.1f}" if isinstance(nota, (int, float)) else "N/A",
+                        "onde": "Em alta 🔥"
+                    })
+        
         return resultados
-    except:
-        return None
+    except requests.RequestException:
+        return []
+    except Exception:
+        return []
 
-# HELPERS VISUAIS
-def sparkline_svg(data, is_positive=True):
-    if not data or len(data) < 2:
-        return ""
-    color = "#a8e6cf" if is_positive else "#e6a8a8"
-    width, height = 60, 25
-    min_val, max_val = min(data), max(data)
-    range_val = max_val - min_val if max_val != min_val else 1
-    points = []
-    for i, val in enumerate(data):
-        x = (i / (len(data) - 1)) * width
-        y = height - ((val - min_val) / range_val) * height * 0.8 - 2
-        points.append(f"{x},{y}")
-    return f'<svg width="{width}" height="{height}" style="opacity: 0.8;"><polyline points="{" ".join(points)}" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="{points[-1].split(",")[0]}" cy="{points[-1].split(",")[1]}" r="2.5" fill="{color}"/></svg>'
 
+# ═══════════════════════════════════════════════════════════════════
 # HORA E DATA
+# ═══════════════════════════════════════════════════════════════════
 fuso_brasilia = pytz.timezone('America/Sao_Paulo')
 agora = datetime.now(fuso_brasilia)
-dia_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"][agora.weekday()]
+dia_semana = DIAS_SEMANA_PT[agora.weekday()]
+data_formatada = format_data_pt(agora)
 
-# SIDEBAR COM CITAÇÃO
+# ═══════════════════════════════════════════════════════════════════
+# SIDEBAR
+# ═══════════════════════════════════════════════════════════════════
 with st.sidebar:
+    citacao_dia = random.choice(CITACOES)
     st.markdown(f"""
     <div style="margin-top: 2rem; padding: 1.5rem; background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05)); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
         <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.8rem; opacity: 0.6; color: rgba(255,255,255,0.8);">
             💭 Reflexão do Dia
         </div>
         <div style="font-style: italic; font-size: 0.9rem; line-height: 1.5; color: rgba(255,255,255,0.85); font-family: 'Outfit', sans-serif;">
-            "{random.choice(CITACOES)}"
+            "{citacao_dia}"
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -680,7 +843,9 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
+# ═══════════════════════════════════════════════════════════════════
 # HEADER PRINCIPAL
+# ═══════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="main-header">
     <div class="main-title">Dashboard Pessoal</div>
@@ -688,7 +853,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ═══════════════════════════════════════════════════════════════════
 # ABAS PRINCIPAIS
+# ═══════════════════════════════════════════════════════════════════
 tab1, tab2, tab3 = st.tabs(["🏠 Visão Geral", "📊 Análise Detalhada", "🎬 Entretenimento & Tech"])
 
 # ═══════════════════════════════════════════════════════════════════
@@ -703,13 +870,13 @@ with tab1:
         <div class="glass-card glass-dark" style="text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
             <div class="card-label" style="justify-content: center;">📅 {dia_semana}</div>
             <div class="card-value card-value-lg">{agora.strftime("%H:%M")}</div>
-            <div class="card-subtitle">{agora.strftime("%d de %B, %Y")}</div>
+            <div class="card-subtitle">{data_formatada}</div>
         </div>
         """, unsafe_allow_html=True)
     
     w_quiri = get_weather(-18.4486, -50.4519)
     with col2:
-        precip = f" · {w_quiri['precipitacao']}mm" if w_quiri['precipitacao'] > 0 else ""
+        precip = f" · {w_quiri['precipitacao']}mm" if w_quiri['precipitacao'] and w_quiri['precipitacao'] > 0 else ""
         st.markdown(f"""
         <div class="glass-card glass-blue">
             <div class="card-label">📍 Quirinópolis, GO</div>
@@ -722,27 +889,38 @@ with tab1:
     # PREVISÃO 5 DIAS
     forecast = get_weather_forecast(-18.4486, -50.4519)
     with col3:
-        if forecast:
-            dias = []
-            for i in range(min(5, len(forecast.get("time", [])))):
-                date = datetime.strptime(forecast["time"][i], "%Y-%m-%d")
-                day_name = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][date.weekday()]
-                code = forecast["weather_code"][i]
-                emojis = {0: "☀️", 1: "🌤️", 2: "⛅", 3: "☁️", 61: "🌧️", 63: "🌧️", 80: "🌦️"}
-                max_t, min_t = forecast["temperature_2m_max"][i], forecast["temperature_2m_min"][i]
-                dias.append(f"""
-                <div style="text-align: center; padding: 0.8rem 0.4rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); flex: 1;">
-                    <div style="font-size: 0.65rem; opacity: 0.6; margin-bottom: 4px;">{day_name}</div>
-                    <div style="font-size: 1.3rem; margin: 0.2rem 0;">{emojis.get(code, "☁️")}</div>
-                    <div style="font-size: 0.75rem; font-weight: 500;">{max_t:.0f}° <span style="opacity: 0.4; font-size: 0.65rem;">{min_t:.0f}°</span></div>
+        if forecast and "time" in forecast:
+            dias_html = []
+            num_dias = min(5, len(forecast.get("time", [])))
+            
+            for i in range(num_dias):
+                try:
+                    date = datetime.strptime(forecast["time"][i], "%Y-%m-%d")
+                    day_name = DIAS_SEMANA_CURTO[date.weekday()]
+                    code = forecast.get("weather_code", [0] * num_dias)[i]
+                    emoji = WEATHER_CODES.get(code, ("☁️", ""))[0]
+                    max_t = forecast.get("temperature_2m_max", [0] * num_dias)[i]
+                    min_t = forecast.get("temperature_2m_min", [0] * num_dias)[i]
+                    
+                    dias_html.append(f"""
+                    <div style="text-align: center; padding: 0.8rem 0.4rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); flex: 1;">
+                        <div style="font-size: 0.65rem; opacity: 0.6; margin-bottom: 4px;">{day_name}</div>
+                        <div style="font-size: 1.3rem; margin: 0.2rem 0;">{emoji}</div>
+                        <div style="font-size: 0.75rem; font-weight: 500;">{max_t:.0f}° <span style="opacity: 0.4; font-size: 0.65rem;">{min_t:.0f}°</span></div>
+                    </div>
+                    """)
+                except (ValueError, IndexError, TypeError):
+                    continue
+            
+            if dias_html:
+                st.markdown(f"""
+                <div class="glass-card" style="padding: 1rem;">
+                    <div class="card-label" style="margin-bottom: 0.8rem;">📅 Próximos 5 Dias</div>
+                    <div style="display: flex; gap: 8px;">{"".join(dias_html)}</div>
                 </div>
-                """)
-            st.markdown(f"""
-            <div class="glass-card" style="padding: 1rem;">
-                <div class="card-label" style="margin-bottom: 0.8rem;">📅 Próximos 5 Dias</div>
-                <div style="display: flex; gap: 8px;">{"".join(dias)}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="glass-card"><div class="card-subtitle">Previsão indisponível</div></div>', unsafe_allow_html=True)
     
@@ -750,14 +928,26 @@ with tab1:
     dolar = get_dolar()
     var_br, patrim_br, lucro_br = calcular_carteira(CARTEIRA_BR)
     var_us, patrim_us, lucro_us = calcular_carteira(CARTEIRA_US, dolar)
-    var_total, patrim_total, lucro_total = var_br + var_us, patrim_br + patrim_us, lucro_br + lucro_us
+    var_total = var_br + var_us
+    patrim_total = patrim_br + patrim_us
+    lucro_total = lucro_br + lucro_us
+    
+    # Calcular porcentagens de alocação com segurança
+    pct_br = safe_division(patrim_br, patrim_total, 0.5) * 100
+    pct_us = safe_division(patrim_us, patrim_total, 0.5) * 100
+    pct_lucro = min(safe_division(abs(lucro_total), patrim_total * 0.05, 0) * 100, 100) if patrim_total > 0 else 0
+    
+    glow_class = "positive-glow" if lucro_total >= 0 else "negative-glow"
+    bg_color = "rgba(67, 233, 123, 0.15)" if lucro_total >= 0 else "rgba(255, 107, 107, 0.15)"
+    border_color = "rgba(67, 233, 123, 0.3)" if lucro_total >= 0 else "rgba(255, 107, 107, 0.3)"
+    var_color = "#a8e6cf" if var_total >= 0 else "#e6a8a8"
+    lucro_color = "#a8e6cf" if lucro_total >= 0 else "#e6a8a8"
+    gradient = "linear-gradient(90deg, #43e97b, #38f9d7)" if lucro_total >= 0 else "linear-gradient(90deg, #ff6b6b, #ee5a6f)"
     
     st.markdown(f"""
-    <div class="glass-card {'positive-glow' if lucro_total >= 0 else 'negative-glow'}" style="
-        background: linear-gradient(135deg, 
-            {'rgba(67, 233, 123, 0.15)' if lucro_total >= 0 else 'rgba(255, 107, 107, 0.15)'} 0%, 
-            rgba(30, 30, 60, 0.4) 100%);
-        border: 1px solid {'rgba(67, 233, 123, 0.3)' if lucro_total >= 0 else 'rgba(255, 107, 107, 0.3)'};
+    <div class="glass-card {glow_class}" style="
+        background: linear-gradient(135deg, {bg_color} 0%, rgba(30, 30, 60, 0.4) 100%);
+        border: 1px solid {border_color};
         padding: 2rem; margin: 1.5rem 0;">
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2rem; text-align: center;">
             <div>
@@ -767,14 +957,14 @@ with tab1:
             </div>
             <div style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 2rem;">
                 <div class="card-label">Posição Hoje</div>
-                <div class="card-value" style="color: {'#a8e6cf' if var_total >= 0 else '#e6a8a8'};">
+                <div class="card-value" style="color: {var_color};">
                     {'+' if var_total >= 0 else ''}R$ {var_total:,.0f}
                 </div>
                 <div class="card-subtitle">Variação diária</div>
             </div>
             <div style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 2rem;">
                 <div class="card-label">Lucro/Prejuízo</div>
-                <div class="card-value" style="color: {'#a8e6cf' if lucro_total >= 0 else '#e6a8a8'};">
+                <div class="card-value" style="color: {lucro_color};">
                     {'+' if lucro_total >= 0 else ''}R$ {lucro_total:,.0f}
                 </div>
                 <div class="card-subtitle">vs Preço Médio</div>
@@ -786,11 +976,7 @@ with tab1:
             </div>
         </div>
         <div style="margin-top: 1.5rem; background: rgba(0,0,0,0.3); height: 6px; border-radius: 3px; overflow: hidden;">
-            <div style="width: {min(abs(lucro_total)/(patrim_total*0.05)*100 if patrim_total > 0 else 0, 100)}%; 
-                        height: 100%; 
-                        background: {'linear-gradient(90deg, #43e97b, #38f9d7)' if lucro_total >= 0 else 'linear-gradient(90deg, #ff6b6b, #ee5a6f)'};
-                        border-radius: 3px; transition: width 1s ease;">
-            </div>
+            <div style="width: {pct_lucro}%; height: 100%; background: {gradient}; border-radius: 3px; transition: width 1s ease;"></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -819,24 +1005,35 @@ with tab1:
         c1, c2, c3 = st.columns([2, 1, 2])
         with c1:
             valor_conv = st.number_input("Valor", min_value=0.0, value=1000.0, label_visibility="collapsed", key="conv_val")
-            moeda_origem = st.selectbox("", ["USD", "BRL", "BTC"], index=0, label_visibility="collapsed", key="conv_from")
+            moeda_origem = st.selectbox("Origem", ["USD", "BRL", "BTC"], index=0, label_visibility="collapsed", key="conv_from")
         with c2:
             st.markdown("<div style='text-align: center; padding-top: 1.2rem; font-size: 1.5rem; color: rgba(255,255,255,0.5);'>⇄</div>", unsafe_allow_html=True)
         with c3:
-            moeda_dest = st.selectbox("", ["BRL", "USD", "BTC"], index=1, label_visibility="collapsed", key="conv_to")
+            moeda_dest = st.selectbox("Destino", ["BRL", "USD", "BTC"], index=0, label_visibility="collapsed", key="conv_to")
             
             btc_price, _ = get_stock_data("BTC-USD")
-            rates = {"USD": 1, "BRL": dolar, "BTC": btc_price}
+            btc_price = btc_price if btc_price > 0 else 100000  # Fallback
+            
+            # Taxas de conversão (tudo para USD como base)
+            rates_to_usd = {"USD": 1.0, "BRL": 1.0 / dolar, "BTC": btc_price}
+            rates_from_usd = {"USD": 1.0, "BRL": dolar, "BTC": 1.0 / btc_price}
             
             if moeda_origem == moeda_dest:
                 resultado = valor_conv
             else:
-                em_usd = valor_conv * (1 if moeda_origem == "USD" else (1/rates[moeda_origem] if moeda_origem == "BRL" else rates[moeda_origem]))
-                resultado = em_usd * (rates[moeda_dest] if moeda_dest != "USD" else 1)
+                # Converter para USD primeiro, depois para moeda destino
+                em_usd = valor_conv * rates_to_usd.get(moeda_origem, 1)
+                resultado = em_usd * rates_from_usd.get(moeda_dest, 1)
+            
+            # Formatação do resultado
+            if moeda_dest == "BTC":
+                resultado_fmt = f"{resultado:.8f}"
+            else:
+                resultado_fmt = f"{resultado:,.2f}"
             
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 0.8rem; text-align: center; margin-top: 0.3rem; border: 1px solid rgba(255,255,255,0.1);">
-                <div style="font-size: 1.5rem; font-weight: 600; color: #a8e6cf;">{resultado:,.2f}</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: #a8e6cf;">{resultado_fmt}</div>
                 <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">{moeda_dest}</div>
             </div>
             """, unsafe_allow_html=True)
@@ -844,20 +1041,29 @@ with tab1:
     
     # AÇÕES DESTAQUE COM SPARKLINES
     st.markdown('<div class="section-title"><span class="section-icon">📈</span> Ações em Destaque</div>', unsafe_allow_html=True)
-    stocks_destaque = {"PRIO3": "PRIO3.SA", "BBAS3": "BBAS3.SA", "VALE3": "VALE3.SA", "MGLU3": "MGLU3.SA", "PETR4": "PETR4.SA", "ITUB4": "ITUB4.SA"}
+    stocks_destaque = {
+        "PRIO3": "PRIO3.SA", "BBAS3": "BBAS3.SA", "VALE3": "VALE3.SA",
+        "MGLU3": "MGLU3.SA", "PETR4": "PETR4.SA", "ITUB4": "ITUB4.SA"
+    }
     cols_st = st.columns(len(stocks_destaque))
+    
     for i, (name, ticker) in enumerate(stocks_destaque.items()):
         price, var = get_stock_data(ticker)
         spark_data = get_sparkline(ticker)
         svg_spark = sparkline_svg(spark_data, is_positive=(var >= 0))
+        glow = "positive-glow" if var >= 0 else "negative-glow"
+        color = "#a8e6cf" if var >= 0 else "#e6a8a8"
+        badge = "badge-positive" if var >= 0 else "badge-negative"
+        arrow = "▲" if var >= 0 else "▼"
+        
         with cols_st[i]:
             st.markdown(f"""
-            <div class="glass-card glass-dark {'positive-glow' if var >= 0 else 'negative-glow'}" style="position: relative; overflow: hidden;">
+            <div class="glass-card glass-dark {glow}" style="position: relative; overflow: hidden;">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
                     <div>
                         <div class="card-label">{name}</div>
-                        <div class="card-value card-value-sm" style="color: {'#a8e6cf' if var >= 0 else '#e6a8a8'};">R$ {price:.2f}</div>
-                        <span class="badge {'badge-positive' if var >= 0 else 'badge-negative'}">{'▲' if var >= 0 else '▼'} {abs(var):.1f}%</span>
+                        <div class="card-value card-value-sm" style="color: {color};">R$ {price:.2f}</div>
+                        <span class="badge {badge}">{arrow} {abs(var):.1f}%</span>
                     </div>
                     <div style="margin-top: -5px; margin-right: -10px;">{svg_spark}</div>
                 </div>
@@ -868,21 +1074,27 @@ with tab1:
 # ABA 2: ANÁLISE DETALHADA
 # ═══════════════════════════════════════════════════════════════════
 with tab2:
-    # GRID PRINCIPAL
     col_left, col_right = st.columns([2, 1])
     
     with col_left:
         # COMMODITIES
         st.markdown('<div class="section-title"><span class="section-icon">🌾</span> Commodities & Ativos</div>', unsafe_allow_html=True)
         commodities = {
-            "SOJA": ("SOYB", "🌱", "glass-green"), "MILHO": ("CORN", "🌽", "glass-gold"),
-            "CAFÉ": ("JO", "☕", "glass-rose"), "BRENT": ("BNO", "🛢️", "glass-dark"),
-            "OURO": ("GLD", "💰", "glass-gold"), "BITCOIN": ("BTC-USD", "₿", "glass-purple")
+            "SOJA": ("SOYB", "🌱", "glass-green"),
+            "MILHO": ("CORN", "🌽", "glass-gold"),
+            "CAFÉ": ("JO", "☕", "glass-rose"),
+            "BRENT": ("BNO", "🛢️", "glass-dark"),
+            "OURO": ("GLD", "💰", "glass-gold"),
+            "BITCOIN": ("BTC-USD", "₿", "glass-purple")
         }
         cols_comm = st.columns(3)
+        
         for i, (name, (ticker, emoji, cor)) in enumerate(commodities.items()):
             price, var = get_stock_data(ticker)
             price_display = f"${price:,.0f}" if name == "BITCOIN" else f"${price:.2f}"
+            badge = "badge-positive" if var >= 0 else "badge-negative"
+            arrow = "▲" if var >= 0 else "▼"
+            
             with cols_comm[i % 3]:
                 st.markdown(f"""
                 <div class="glass-card {cor}">
@@ -890,7 +1102,7 @@ with tab2:
                     <div style="display: flex; justify-content: space-between; align-items: end;">
                         <div>
                             <div class="card-value card-value-sm">{price_display}</div>
-                            <span class="badge {'badge-positive' if var >= 0 else 'badge-negative'}">{'▲' if var >= 0 else '▼'} {abs(var):.1f}%</span>
+                            <span class="badge {badge}">{arrow} {abs(var):.1f}%</span>
                         </div>
                     </div>
                 </div>
@@ -905,11 +1117,12 @@ with tab2:
             {"ticker": "PETR4", "data": "Mar/2025", "valor": "Est.", "tipo": "DIV", "cor": "glass-dark"},
         ]
         cols_div = st.columns(len(dividendos_mock))
+        
         for col, div in zip(cols_div, dividendos_mock):
             with col:
                 st.markdown(f"""
                 <div class="glass-card {div['cor']}" style="text-align: center;">
-                    <div style="font-family: Space Grotesk; font-size: 1.2rem; font-weight: 600;">{div['ticker']}</div>
+                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 600;">{div['ticker']}</div>
                     <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin: 0.3rem 0;">{div['data']}</div>
                     <div style="font-size: 1.1rem; color: #ffd700; font-weight: 500;">{div['valor']}</div>
                     <div style="font-size: 0.65rem; background: rgba(255,215,0,0.15); display: inline-block; padding: 2px 8px; border-radius: 10px; margin-top: 5px;">{div['tipo']}</div>
@@ -933,24 +1146,28 @@ with tab2:
         <div class="glass-card glass-green">
             <div class="card-label">Alocação BR/US</div>
             <div style="margin-top: 0.5rem; background: rgba(0,0,0,0.3); height: 20px; border-radius: 10px; overflow: hidden; display: flex;">
-                <div style="width: {(patrim_br/patrim_total)*100 if patrim_total > 0 else 50}%; background: linear-gradient(90deg, #667eea, #764ba2);"></div>
-                <div style="width: {(patrim_us/patrim_total)*100 if patrim_total > 0 else 50}%; background: linear-gradient(90deg, #f093fb, #f5576c);"></div>
+                <div style="width: {pct_br}%; background: linear-gradient(90deg, #667eea, #764ba2);"></div>
+                <div style="width: {pct_us}%; background: linear-gradient(90deg, #f093fb, #f5576c);"></div>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-top: 0.3rem; opacity: 0.7;">
-                <span>🇧🇷 {(patrim_br/patrim_total)*100:.0f}%</span>
-                <span>🇺🇸 {(patrim_us/patrim_total)*100:.0f}%</span>
+                <span>🇧🇷 {pct_br:.0f}%</span>
+                <span>🇺🇸 {pct_us:.0f}%</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         # IBOVESPA
         ibov, ibov_var = get_stock_data("^BVSP")
+        ibov_glow = "positive-glow" if ibov_var >= 0 else "negative-glow"
+        ibov_badge = "badge-positive" if ibov_var >= 0 else "badge-negative"
+        ibov_arrow = "▲" if ibov_var >= 0 else "▼"
+        
         st.markdown(f"""
-        <div class="glass-card {'positive-glow' if ibov_var >= 0 else 'negative-glow'}">
+        <div class="glass-card {ibov_glow}">
             <div class="card-label">📊 Ibovespa</div>
             <div class="card-value">{ibov:,.0f}</div>
-            <div class="badge {'badge-positive' if ibov_var >= 0 else 'badge-negative'}" style="margin-top: 0.5rem;">
-                {'▲' if ibov_var >= 0 else '▼'} {abs(ibov_var):.2f}%
+            <div class="badge {ibov_badge}" style="margin-top: 0.5rem;">
+                {ibov_arrow} {abs(ibov_var):.2f}%
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -961,15 +1178,25 @@ with tab2:
     
     with col_n1:
         st.markdown('<div class="card-label" style="margin-bottom: 1rem; color: #a8e6cf;">🌴 Coruripe & Alagoas</div>', unsafe_allow_html=True)
-        for item in get_news("Coruripe Alagoas"):
-            titulo = item.title[:75] + "..." if len(item.title) > 75 else item.title
-            st.markdown(f'<div class="news-item"><a href="{item.link}" target="_blank">{titulo}</a></div>', unsafe_allow_html=True)
+        noticias_al = get_news("Coruripe Alagoas")
+        if noticias_al:
+            for item in noticias_al:
+                titulo = item.title[:75] + "..." if len(item.title) > 75 else item.title
+                link = getattr(item, 'link', '#')
+                st.markdown(f'<div class="news-item"><a href="{link}" target="_blank">{titulo}</a></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="card-subtitle">Sem notícias recentes</div>', unsafe_allow_html=True)
     
     with col_n2:
         st.markdown('<div class="card-label" style="margin-bottom: 1rem; color: #a8e6cf;">📍 Quirinópolis & Goiás</div>', unsafe_allow_html=True)
-        for item in get_news("Quirinópolis Goiás"):
-            titulo = item.title[:75] + "..." if len(item.title) > 75 else item.title
-            st.markdown(f'<div class="news-item"><a href="{item.link}" target="_blank">{titulo}</a></div>', unsafe_allow_html=True)
+        noticias_go = get_news("Quirinópolis Goiás")
+        if noticias_go:
+            for item in noticias_go:
+                titulo = item.title[:75] + "..." if len(item.title) > 75 else item.title
+                link = getattr(item, 'link', '#')
+                st.markdown(f'<div class="news-item"><a href="{link}" target="_blank">{titulo}</a></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="card-subtitle">Sem notícias recentes</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
 # ABA 3: ENTRETENIMENTO E TECH
@@ -978,13 +1205,15 @@ with tab3:
     # NOTÍCIAS IA
     st.markdown('<div class="section-title"><span class="section-icon">🤖</span> Inteligência Artificial & Tech</div>', unsafe_allow_html=True)
     cols_ia = st.columns(4)
+    
     for i, empresa in enumerate(EMPRESAS_IA):
         noticia = get_single_news(empresa["query"])
         with cols_ia[i]:
             if noticia:
                 titulo = noticia.title[:50] + "..." if len(noticia.title) > 50 else noticia.title
+                link = getattr(noticia, 'link', '#')
                 st.markdown(f"""
-                <a href="{noticia.link}" target="_blank" style="text-decoration: none;">
+                <a href="{link}" target="_blank" style="text-decoration: none;">
                     <div class="glass-card {empresa['cor']}" style="min-height: 140px; cursor: pointer;">
                         <div class="card-label">{empresa['emoji']} {empresa['nome']}</div>
                         <div style="color: rgba(255,255,255,0.9); font-size: 0.85rem; line-height: 1.4; margin-top: 0.5rem;">{titulo}</div>
@@ -1002,8 +1231,13 @@ with tab3:
     
     # FILMES E SÉRIES
     tmdb_data = get_tmdb_trending()
-    indicacoes = random.sample(tmdb_data, min(4, len(tmdb_data))) if tmdb_data else random.sample(INDICACOES_FALLBACK, 4)
-    subtitulo = "Em alta esta semana" if tmdb_data else "Recomendações"
+    
+    if tmdb_data and len(tmdb_data) >= 4:
+        indicacoes = random.sample(tmdb_data, min(4, len(tmdb_data)))
+        subtitulo = "Em alta esta semana"
+    else:
+        indicacoes = random.sample(INDICACOES_FALLBACK, min(4, len(INDICACOES_FALLBACK)))
+        subtitulo = "Recomendações"
     
     st.markdown(f'<div class="section-title"><span class="section-icon">🎬</span> Filmes & Séries · <span style="font-weight: 400; font-size: 0.85rem; opacity: 0.7;">{subtitulo}</span></div>', unsafe_allow_html=True)
     cols_f = st.columns(4)
@@ -1011,18 +1245,23 @@ with tab3:
     
     for i, item in enumerate(indicacoes):
         emoji = "🎬" if item["tipo"] == "Filme" else "📺"
+        cor = cores_media[i % len(cores_media)]
+        onde_cor = "#a8e6cf" if "Em alta" in item.get("onde", "") else "rgba(255,215,0,0.8)"
+        
         with cols_f[i]:
             st.markdown(f"""
-            <div class="glass-card {cores_media[i]} media-card" style="min-height: 160px;">
+            <div class="glass-card {cor} media-card" style="min-height: 160px;">
                 <div class="media-rating">⭐ {item['nota']}</div>
                 <div class="card-label">{emoji} {item['tipo']}</div>
-                <div style="margin-top: 0.5rem; font-family: Space Grotesk; font-size: 1.1rem; font-weight: 600; color: rgba(255,255,255,0.95);">{item['titulo']}</div>
+                <div style="margin-top: 0.5rem; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 600; color: rgba(255,255,255,0.95);">{item['titulo']}</div>
                 <div class="card-subtitle" style="margin-top: 0.5rem;">{item['genero']}</div>
-                <div class="card-subtitle" style="margin-top: 0.3rem; color: {'#a8e6cf' if 'Em alta' in item['onde'] else 'rgba(255,215,0,0.8)'};">{item['onde']}</div>
+                <div class="card-subtitle" style="margin-top: 0.3rem; color: {onde_cor};">{item['onde']}</div>
             </div>
             """, unsafe_allow_html=True)
 
+# ═══════════════════════════════════════════════════════════════════
 # FOOTER
+# ═══════════════════════════════════════════════════════════════════
 st.markdown(f"""
 <div style="text-align: center; margin-top: 3rem; padding: 2rem; color: rgba(255,255,255,0.3); font-size: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05);">
     <div style="margin-bottom: 0.5rem;">Atualizado às {agora.strftime("%H:%M")} · Dados via Yahoo Finance, Open-Meteo & Google News</div>
