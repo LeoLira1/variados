@@ -1,869 +1,588 @@
 import streamlit as st
-import yfinance as yf
-import requests
-import feedparser
-from datetime import datetime, timedelta
-from urllib.parse import quote
-import random
-import pytz
+import pandas as pd
+import plotly.graph_objects as go
+import json
+import os
+from datetime import datetime
 
-# Configuração da página
+# ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Dashboard de Entretenimento",
-    page_icon="🎬",
-    layout="wide"
+    page_title="CAMDA Estoque",
+    page_icon="🌿",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
-# --- CSS GLASSMORPHISM CINEMATOGRÁFICO ---
+# ── Custom CSS for mobile-optimized dark theme ───────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-    
-    /* Reset e Base */
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&display=swap');
+
     .stApp {
-        background: linear-gradient(135deg, 
-            #1a1a2e 0%, 
-            #16213e 25%,
-            #1a1a2e 50%,
-            #0f0f1a 75%,
-            #1a1a2e 100%);
-        background-attachment: fixed;
+        background: #0a0f1a;
+        color: #e0e6ed;
         font-family: 'Outfit', sans-serif;
     }
-    
-    /* Efeito de partículas/estrelas no fundo */
-    .stApp::before {
-        content: '';
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-image: 
-            radial-gradient(2px 2px at 20px 30px, rgba(255,255,255,0.3), transparent),
-            radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.2), transparent),
-            radial-gradient(1px 1px at 90px 40px, rgba(255,255,255,0.4), transparent),
-            radial-gradient(2px 2px at 130px 80px, rgba(255,255,255,0.2), transparent),
-            radial-gradient(1px 1px at 160px 120px, rgba(255,255,255,0.3), transparent);
-        background-repeat: repeat;
-        background-size: 200px 200px;
-        pointer-events: none;
-        z-index: 0;
-        opacity: 0.5;
-    }
-    
-    /* Orbes decorativas flutuantes */
-    .orb {
-        position: fixed;
-        border-radius: 50%;
-        filter: blur(60px);
-        opacity: 0.4;
-        pointer-events: none;
-        z-index: 0;
-    }
-    .orb-1 {
-        width: 300px;
-        height: 300px;
-        background: linear-gradient(135deg, #e8b4b8 0%, #d4a5a5 100%);
-        top: 10%;
-        right: 10%;
-        animation: float 8s ease-in-out infinite;
-    }
-    .orb-2 {
-        width: 200px;
-        height: 200px;
-        background: linear-gradient(135deg, #a5b4c4 0%, #7a8a9a 100%);
-        bottom: 20%;
-        left: 5%;
-        animation: float 10s ease-in-out infinite reverse;
-    }
-    .orb-3 {
-        width: 150px;
-        height: 150px;
-        background: linear-gradient(135deg, #c4a5d4 0%, #9a7aaa 100%);
-        top: 50%;
-        left: 30%;
-        animation: float 12s ease-in-out infinite;
-    }
-    .orb-4 {
-        width: 250px;
-        height: 250px;
-        background: linear-gradient(135deg, #b8d4a5 0%, #8aaa7a 100%);
-        bottom: 10%;
-        right: 20%;
-        animation: float 15s ease-in-out infinite;
-    }
-    
-    @keyframes float {
-        0%, 100% { transform: translateY(0) translateX(0); }
-        25% { transform: translateY(-20px) translateX(10px); }
-        50% { transform: translateY(-10px) translateX(-10px); }
-        75% { transform: translateY(-30px) translateX(5px); }
-    }
-    
-    /* Container principal */
-    .block-container {
-        padding: 2rem 3rem !important;
-        max-width: 1400px !important;
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* Esconder elementos padrão do Streamlit */
     #MainMenu, footer, header {visibility: hidden;}
-    .stDeployButton {display: none;}
-    
-    /* === CARDS GLASSMORPHISM === */
-    .glass-card {
-        background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.1) 0%, 
-            rgba(255, 255, 255, 0.05) 100%);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border-radius: 24px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 
-            0 8px 32px rgba(0, 0, 0, 0.3),
-            inset 0 1px 0 rgba(255, 255, 255, 0.1);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        overflow: hidden;
+    .block-container {
+        padding: 0.5rem 0.8rem !important;
+        max-width: 100% !important;
     }
-    
-    .glass-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: linear-gradient(90deg, 
-            transparent, 
-            rgba(255, 255, 255, 0.3), 
-            transparent);
-    }
-    
-    .glass-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 
-            0 12px 40px rgba(0, 0, 0, 0.4),
-            inset 0 1px 0 rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.25);
-    }
-    
-    /* Variantes de cor para cards */
-    .glass-rose {
-        background: linear-gradient(135deg, 
-            rgba(232, 180, 184, 0.2) 0%, 
-            rgba(180, 140, 144, 0.1) 100%);
-    }
-    
-    .glass-blue {
-        background: linear-gradient(135deg, 
-            rgba(165, 180, 196, 0.2) 0%, 
-            rgba(100, 120, 140, 0.1) 100%);
-    }
-    
-    .glass-purple {
-        background: linear-gradient(135deg, 
-            rgba(196, 165, 212, 0.2) 0%, 
-            rgba(140, 100, 160, 0.1) 100%);
-    }
-    
-    .glass-gold {
-        background: linear-gradient(135deg, 
-            rgba(212, 180, 130, 0.2) 0%, 
-            rgba(160, 130, 80, 0.1) 100%);
-    }
-    
-    .glass-green {
-        background: linear-gradient(135deg, 
-            rgba(130, 180, 160, 0.2) 0%, 
-            rgba(80, 130, 110, 0.1) 100%);
-    }
-    
-    .glass-dark {
-        background: linear-gradient(135deg, 
-            rgba(60, 60, 80, 0.4) 0%, 
-            rgba(40, 40, 60, 0.2) 100%);
-    }
-    
-    .glass-red {
-        background: linear-gradient(135deg, 
-            rgba(212, 130, 130, 0.2) 0%, 
-            rgba(160, 80, 80, 0.1) 100%);
-    }
-    
-    /* Tipografia */
-    .card-label {
+
+    .main-title {
         font-family: 'Outfit', sans-serif;
-        font-size: 0.75rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 1.5px;
-        color: rgba(255, 255, 255, 0.6);
-        margin-bottom: 0.5rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+        font-weight: 900;
+        font-size: 1.6rem;
+        background: linear-gradient(135deg, #00d68f, #00b887);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        margin: 0.3rem 0;
+        letter-spacing: -0.5px;
     }
-    
-    .card-value {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 2rem;
-        font-weight: 600;
-        color: rgba(255, 255, 255, 0.95);
-        line-height: 1.2;
-        margin-bottom: 0.3rem;
-    }
-    
-    .card-value-lg {
-        font-size: 2.8rem;
-    }
-    
-    .card-value-sm {
-        font-size: 1.4rem;
-    }
-    
-    .card-subtitle {
-        font-family: 'Outfit', sans-serif;
-        font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.5);
-        font-weight: 400;
-    }
-    
-    /* Badges de variação */
-    .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.75rem;
-        font-weight: 600;
-        backdrop-filter: blur(10px);
-    }
-    
-    .badge-positive {
-        background: rgba(130, 200, 160, 0.3);
-        color: #a8e6cf;
-        border: 1px solid rgba(130, 200, 160, 0.4);
-    }
-    
-    .badge-negative {
-        background: rgba(200, 130, 130, 0.3);
-        color: #e6a8a8;
-        border: 1px solid rgba(200, 130, 130, 0.4);
-    }
-    
-    .badge-category {
-        background: rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+    .sub-title {
+        font-family: 'JetBrains Mono', monospace;
         font-size: 0.7rem;
-        text-transform: uppercase;
+        color: #4a5568;
+        text-align: center;
+        margin-bottom: 0.5rem;
     }
-    
-    /* Seções */
-    .section-title {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 1.3rem;
-        font-weight: 600;
-        color: rgba(255, 255, 255, 0.9);
-        margin: 2.5rem 0 1.2rem 0;
-        padding-bottom: 0.8rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+    .stat-row {
         display: flex;
-        align-items: center;
-        gap: 0.75rem;
+        gap: 6px;
+        margin-bottom: 0.5rem;
+    }
+    .stat-card {
+        flex: 1;
+        background: linear-gradient(135deg, #111827, #1a2332);
+        border: 1px solid #1e293b;
+        border-radius: 10px;
+        padding: 8px 10px;
+        text-align: center;
+    }
+    .stat-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #00d68f;
+    }
+    .stat-value.red { color: #ff4757; }
+    .stat-label {
+        font-size: 0.6rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* Product card for counting */
+    .prod-card {
+        background: #111827;
+        border: 1px solid #1e293b;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 6px;
+    }
+    .prod-card.divergent {
+        border-color: #ff4757;
+        background: linear-gradient(135deg, #1a0a0d, #111827);
+    }
+    .prod-card.ok {
+        border-color: #00d68f33;
+    }
+    .prod-name {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #e0e6ed;
+        margin-bottom: 2px;
+    }
+    .prod-info {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+        color: #64748b;
+    }
+    .prod-info .sys { color: #4a90d9; }
+    .prod-info .fis { color: #00d68f; }
+    .prod-info .fis.bad { color: #ff4757; }
+    .prod-info .diff { color: #ff4757; font-weight: 700; }
+
+    /* Filter chips */
+    .stRadio > div {
+        flex-direction: row !important;
+        gap: 4px !important;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .stRadio > div > label {
+        background: #111827 !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 20px !important;
+        padding: 4px 14px !important;
+        font-size: 0.75rem !important;
+        color: #94a3b8 !important;
+    }
+
+    .stFileUploader label { font-size: 0.75rem !important; }
+
+    .stNumberInput input {
+        background: #111827 !important;
+        border: 1px solid #1e293b !important;
+        color: #e0e6ed !important;
+        border-radius: 8px !important;
+        font-family: 'JetBrains Mono', monospace !important;
+    }
+
+    .div-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+    }
+    .div-table th {
+        background: #111827;
+        color: #64748b;
+        padding: 6px 8px;
+        text-align: left;
+        border-bottom: 1px solid #1e293b;
+        text-transform: uppercase;
         letter-spacing: 0.5px;
     }
-    
-    .section-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.1rem;
-        background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.15) 0%, 
-            rgba(255, 255, 255, 0.05) 100%);
-        backdrop-filter: blur(10px);
+    .div-table td {
+        padding: 5px 8px;
+        border-bottom: 1px solid #0d1420;
+        color: #ff4757;
     }
-    
-    /* Cards de notícias */
-    .news-item {
-        background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.08) 0%, 
-            rgba(255, 255, 255, 0.03) 100%);
-        backdrop-filter: blur(15px);
-        border-radius: 16px;
-        padding: 1rem 1.2rem;
-        margin-bottom: 0.75rem;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .news-item::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 3px;
-        background: linear-gradient(180deg, #e8b4b8, #a5b4c4);
-        border-radius: 3px;
-    }
-    
-    .news-item:hover {
-        background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.12) 0%, 
-            rgba(255, 255, 255, 0.06) 100%);
-        transform: translateX(4px);
-    }
-    
-    .news-item a {
-        color: rgba(255, 255, 255, 0.85);
-        text-decoration: none;
-        font-family: 'Outfit', sans-serif;
-        font-size: 0.9rem;
-        font-weight: 400;
-        line-height: 1.5;
-        display: block;
-    }
-    
-    .news-item a:hover {
-        color: rgba(255, 255, 255, 1);
-    }
-    
-    .news-meta {
-        font-size: 0.75rem;
-        color: rgba(255, 255, 255, 0.4);
-        margin-top: 0.5rem;
-        display: flex;
-        gap: 1rem;
-    }
-    
-    /* Cards com imagem de fundo */
-    .card-with-bg {
-        background-size: cover;
-        background-position: center;
-        position: relative;
-        min-height: 160px;
-    }
-    
-    .card-with-bg::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(135deg, 
-            rgba(26, 26, 46, 0.8) 0%, 
-            rgba(26, 26, 46, 0.6) 100%);
-        backdrop-filter: blur(2px);
-        border-radius: 24px;
-        z-index: 0;
-    }
-    
-    .card-with-bg > * {
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* Header principal */
-    .main-header {
-        text-align: center;
-        margin-bottom: 2rem;
-        padding: 2rem 0;
-    }
-    
-    .main-title {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 2rem;
-        font-weight: 300;
-        color: rgba(255, 255, 255, 0.9);
-        letter-spacing: 8px;
-        text-transform: uppercase;
-        margin-bottom: 0.5rem;
-    }
-    
-    .main-subtitle {
-        font-family: 'Outfit', sans-serif;
-        font-size: 0.9rem;
-        color: rgba(255, 255, 255, 0.4);
-        letter-spacing: 2px;
-    }
-    
-    /* Botão de atualização */
-    .stButton > button {
-        background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.1) 0%, 
-            rgba(255, 255, 255, 0.05) 100%) !important;
-        backdrop-filter: blur(20px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
-        border-radius: 16px !important;
-        color: rgba(255, 255, 255, 0.8) !important;
-        font-family: 'Outfit', sans-serif !important;
-        font-weight: 500 !important;
-        padding: 0.75rem 2rem !important;
-        transition: all 0.3s ease !important;
-        letter-spacing: 1px !important;
-    }
-    
-    .stButton > button:hover {
-        background: linear-gradient(135deg, 
-            rgba(255, 255, 255, 0.15) 0%, 
-            rgba(255, 255, 255, 0.08) 100%) !important;
-        border-color: rgba(255, 255, 255, 0.25) !important;
-        transform: translateY(-2px) !important;
-    }
-    
-    /* Filme/Série card especial */
-    .media-card {
-        position: relative;
-        overflow: hidden;
-        min-height: 180px;
-    }
-    
-    .media-rating {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(10px);
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: #ffd700;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        z-index: 2;
-    }
-    
-    .media-platform {
-        position: absolute;
-        top: 1rem;
-        left: 1rem;
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(10px);
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: rgba(255, 255, 255, 0.9);
-        text-transform: uppercase;
-        z-index: 2;
-    }
-    
-    /* Gaming card */
-    .game-card {
-        border-left: 3px solid;
-        border-image: linear-gradient(180deg, #4ade80, #22d3ee) 1;
-    }
-    
-    /* Book card */
-    .book-card {
-        border-left: 3px solid;
-        border-image: linear-gradient(180deg, #fb923c, #f472b6) 1;
-    }
-    
-    /* Efeito shimmer sutil */
-    @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-    }
-    
-    .shimmer-effect {
-        background: linear-gradient(90deg, 
-            transparent 0%, 
-            rgba(255, 255, 255, 0.05) 50%, 
-            transparent 100%);
-        background-size: 200% 100%;
-        animation: shimmer 3s ease-in-out infinite;
-    }
-    
-    /* Tabs personalizadas */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: transparent;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 0.5rem 1.5rem;
-        color: rgba(255, 255, 255, 0.6);
-        font-family: 'Outfit', sans-serif;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: rgba(255, 255, 255, 0.15) !important;
-        color: white !important;
-        border-color: rgba(255, 255, 255, 0.3) !important;
-    }
-    
-    /* Responsividade */
-    @media (max-width: 768px) {
-        .card-value { font-size: 1.6rem; }
-        .card-value-lg { font-size: 2rem; }
-        .block-container { padding: 1rem !important; }
-        .main-title { font-size: 1.5rem; letter-spacing: 4px; }
-    }
-</style>
 
-<!-- Orbes decorativas -->
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-<div class="orb orb-4"></div>
+    .stPlotlyChart { border-radius: 12px; overflow: hidden; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0a0f1a; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+</style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURAÇÃO DE APIs ---
-# TMDB - Crie sua chave em https://www.themoviedb.org/settings/api
-TMDB_API_KEY = "sua_chave_aqui"  # Substitua pela sua chave da API TMDB
+# ── Data paths ───────────────────────────────────────────────────────────────
+DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+STOCK_FILE = os.path.join(DATA_DIR, "estoque_sistema.csv")
+FISICO_FILE = os.path.join(DATA_DIR, "contagem_fisica.json")
 
-# RAWG API para jogos (opcional) - https://rawg.io/apidocs
-RAWG_API_KEY = "sua_chave_rawg_aqui"  # Opcional para dados de jogos
 
-# --- FUNÇÕES AUXILIARES ---
+def classify_product(name: str) -> str:
+    n = name.upper()
+    if "HERBICIDA" in n:
+        return "HERBICIDAS"
+    elif "FUNGICIDA" in n:
+        return "FUNGICIDAS"
+    elif "INSETICIDA" in n:
+        return "INSETICIDAS"
+    elif "NEMATICIDA" in n:
+        return "NEMATICIDAS"
+    else:
+        return "OUTROS"
 
-@st.cache_data(ttl=1800)
-def get_news_by_topic(query, max_results=5, days=7):
-    """Busca notícias por tópico usando Google News RSS"""
-    try:
-        data_limite = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-        query_com_data = f"{query} after:{data_limite}"
-        query_encoded = quote(query_com_data)
-        url = f"https://news.google.com/rss/search?q={query_encoded}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=10)
-        feed = feedparser.parse(response.content)
-        return feed.entries[:max_results]
-    except Exception as e:
-        return []
 
-@st.cache_data(ttl=3600)
-def get_tmdb_trending():
-    """Busca filmes e séries em alta no TMDB"""
-    if not TMDB_API_KEY or TMDB_API_KEY == "sua_chave_aqui":
+def parse_excel(uploaded_file) -> pd.DataFrame:
+    df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
+
+    header_idx = None
+    for i, row in df_raw.iterrows():
+        vals = row.astype(str).str.upper().tolist()
+        if "PRODUTO" in vals:
+            header_idx = i
+            break
+
+    if header_idx is None:
+        st.error("❌ Formato não reconhecido. A planilha precisa ter a coluna 'Produto'.")
+        return pd.DataFrame()
+
+    df = df_raw.iloc[header_idx + 1:].copy()
+    df.columns = df_raw.iloc[header_idx].tolist()
+
+    col_map = {}
+    for c in df.columns:
+        cu = str(c).upper().strip()
+        if "PRODUTO" in cu:
+            col_map["Produto"] = c
+        elif "QUANTIDADE" in cu or "QTD" in cu:
+            col_map["Qtd_Sistema"] = c
+        elif "CÓDIGO" in cu or "CODIGO" in cu or "CÓD" in cu:
+            col_map["Codigo"] = c
+
+    if "Produto" not in col_map or "Qtd_Sistema" not in col_map:
+        st.error("❌ Colunas 'Produto' e 'Quantidade' não encontradas.")
+        return pd.DataFrame()
+
+    result = pd.DataFrame()
+    result["Produto"] = df[col_map["Produto"]].astype(str).str.strip()
+    result["Qtd_Sistema"] = pd.to_numeric(df[col_map["Qtd_Sistema"]], errors="coerce")
+
+    if "Codigo" in col_map:
+        result["Codigo"] = df[col_map["Codigo"]].astype(str).str.strip()
+    else:
+        result["Codigo"] = ""
+
+    result = result.dropna(subset=["Produto", "Qtd_Sistema"])
+    result = result[~result["Produto"].str.upper().isin(["SUM", "TOTAL", "", "NAN", "NONE"])]
+    result = result[result["Qtd_Sistema"] > 0]
+    result["Qtd_Sistema"] = result["Qtd_Sistema"].astype(int)
+    result["Categoria"] = result["Produto"].apply(classify_product)
+
+    # Stable key by product code (survives name changes)
+    result["Chave"] = result.apply(
+        lambda r: r["Codigo"] if r["Codigo"] not in ["", "nan", "None"] else r["Produto"],
+        axis=1,
+    )
+
+    return result.reset_index(drop=True)
+
+
+def load_fisico() -> dict:
+    if os.path.exists(FISICO_FILE):
+        with open(FISICO_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_fisico(data: dict):
+    with open(FISICO_FILE, "w") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def short_name(prod: str) -> str:
+    parts = prod.split(" ", 1)
+    return parts[-1] if len(parts) > 1 else prod
+
+
+def build_treemap(df: pd.DataFrame, fisico: dict, filter_cat: str = "TODOS"):
+    if filter_cat != "TODOS":
+        df = df[df["Categoria"] == filter_cat]
+    if df.empty:
         return None
-    
-    try:
-        headers = {
-            "accept": "application/json",
-            "Authorization": f"Bearer {TMDB_API_KEY}"
-        }
-        
-        resultados = []
-        
-        # Filmes em alta
-        url_movies = "https://api.themoviedb.org/3/trending/movie/week?language=pt-BR"
-        response = requests.get(url_movies, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            movies = response.json().get("results", [])[:5]
-            for movie in movies:
-                resultados.append({
-                    "titulo": movie.get("title", "Sem título"),
-                    "tipo": "Filme",
-                    "nota": f"{movie.get('vote_average', 0):.1f}",
-                    "data": movie.get("release_date", "")[:4] if movie.get("release_date") else "N/A",
-                    "onde": "Cinema/Streaming"
-                })
-        
-        # Séries em alta
-        url_tv = "https://api.themoviedb.org/3/trending/tv/week?language=pt-BR"
-        response = requests.get(url_tv, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            shows = response.json().get("results", [])[:5]
-            for show in shows:
-                resultados.append({
-                    "titulo": show.get("name", "Sem título"),
-                    "tipo": "Série",
-                    "nota": f"{show.get('vote_average', 0):.1f}",
-                    "data": show.get("first_air_date", "")[:4] if show.get("first_air_date") else "N/A",
-                    "onde": "Streaming"
-                })
-        
-        return resultados if resultados else None
-        
-    except Exception as e:
-        return None
 
-# --- DADOS FALLBACK ---
+    labels, parents, values, colors, custom_text = [], [], [], [], []
 
-FALLBACK_MEDIA = [
-    {"titulo": "Duna: Parte 2", "tipo": "Filme", "nota": "8.8", "data": "2024", "onde": "Max", "genero": "Ficção Científica"},
-    {"titulo": "Deadpool & Wolverine", "tipo": "Filme", "nota": "8.1", "data": "2024", "onde": "Cinema", "genero": "Ação/Comédia"},
-    {"titulo": "The Last of Us S2", "tipo": "Série", "nota": "8.5", "data": "2025", "onde": "Max", "genero": "Drama/Ação"},
-    {"titulo": "Severance S2", "tipo": "Série", "nota": "8.9", "data": "2025", "onde": "Apple TV+", "genero": "Suspense"},
-    {"titulo": "Wicked", "tipo": "Filme", "nota": "8.2", "data": "2024", "onde": "Cinema", "genero": "Musical"},
-    {"titulo": "The Bear S3", "tipo": "Série", "nota": "8.6", "data": "2024", "onde": "Star+", "genero": "Drama"},
-]
+    labels.append("ESTOQUE CAMDA")
+    parents.append("")
+    values.append(0)
+    colors.append("#1a2332")
+    custom_text.append("")
 
-FALLBACK_GAMES = [
-    {"titulo": "GTA VI", "plataforma": "PS5/Xbox", "genero": "Ação", "status": "Lançamento 2025"},
-    {"titulo": "Death Stranding 2", "plataforma": "PS5", "genero": "Aventura", "status": "Previsto 2025"},
-    {"titulo": "Hollow Knight: Silksong", "plataforma": "Multi", "genero": "Metroidvania", "status": "Em desenvolvimento"},
-    {"titulo": "Borderlands 4", "plataforma": "Multi", "genero": "FPS/RPG", "status": "Anunciado"},
-]
+    for cat in df["Categoria"].unique():
+        labels.append(cat)
+        parents.append("ESTOQUE CAMDA")
+        values.append(0)
+        colors.append("#1a2332")
+        custom_text.append("")
 
-FALLBACK_BOOKS = [
-    {"titulo": "A Paciente Silenciosa", "autor": "Alex Michaelides", "genero": "Thriller", "destaque": "Best-seller"},
-    {"titulo": "O Hobbit", "autor": "J.R.R. Tolkien", "genero": "Fantasia", "destaque": "Clássico"},
-    {"titulo": "1984", "autor": "George Orwell", "genero": "Distopia", "destaque": "Atemporal"},
-]
+    for _, row in df.iterrows():
+        chave = row["Chave"]
+        qtd_sys = int(row["Qtd_Sistema"])
+        qtd_fis = fisico.get(chave, None)
 
-# --- LAYOUT PRINCIPAL ---
+        sn = short_name(str(row["Produto"]))
+        if len(sn) > 22:
+            sn = sn[:20] + "…"
 
-fuso_brasilia = pytz.timezone('America/Sao_Paulo')
-agora = datetime.now(fuso_brasilia)
-dia_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"][agora.weekday()]
+        labels.append(sn)
+        parents.append(row["Categoria"])
+        values.append(max(qtd_sys, 1))
 
-# Header
+        if qtd_fis is None:
+            colors.append("#2d6a4f")
+            custom_text.append(f"Sis: {qtd_sys} · não conferido")
+        elif qtd_fis == qtd_sys:
+            colors.append("#00d68f")
+            custom_text.append(f"✓ {qtd_sys}")
+        else:
+            diff = qtd_fis - qtd_sys
+            colors.append("#ff4757")
+            custom_text.append(f"Sis: {qtd_sys} | Fís: {qtd_fis} ({diff:+d})")
+
+    fig = go.Figure(go.Treemap(
+        labels=labels, parents=parents, values=values,
+        marker=dict(colors=colors, line=dict(width=1.5, color="#0a0f1a")),
+        textinfo="label+text", text=custom_text,
+        textfont=dict(family="JetBrains Mono, monospace", size=11),
+        hovertemplate="<b>%{label}</b><br>%{text}<br>Peso: %{value}<extra></extra>",
+        pathbar=dict(visible=True, textfont=dict(family="Outfit", size=11, color="#64748b"), thickness=20, edgeshape=">"),
+        tiling=dict(packing="squarify", pad=3),
+        branchvalues="total",
+    ))
+    fig.update_layout(
+        paper_bgcolor="#0a0f1a", plot_bgcolor="#0a0f1a",
+        margin=dict(t=5, l=2, r=2, b=2), height=520,
+        font=dict(family="Outfit", color="#e0e6ed"),
+    )
+    return fig
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN APP
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.markdown('<div class="main-title">CAMDA ESTOQUE</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">MAPA DE CALOR · QUIRINÓPOLIS</div>', unsafe_allow_html=True)
+
+# ── Load / Upload ────────────────────────────────────────────────────────────
+df = pd.DataFrame()
+if os.path.exists(STOCK_FILE):
+    df = pd.read_csv(STOCK_FILE)
+
+with st.expander("📤 Atualizar Planilha do BI", expanded=not os.path.exists(STOCK_FILE)):
+    uploaded = st.file_uploader("Arraste o XLSX do BI", type=["xlsx", "xls"], label_visibility="collapsed")
+    if uploaded:
+        df_new = parse_excel(uploaded)
+        if not df_new.empty:
+            df_new.to_csv(STOCK_FILE, index=False)
+            st.success(f"✅ {len(df_new)} produtos carregados · {datetime.now().strftime('%d/%m %H:%M')}")
+            st.rerun()
+    if os.path.exists(FISICO_FILE):
+        st.caption("💡 Contagem física anterior é mantida ao subir planilha nova.")
+        if st.button("🔄 Resetar contagem física", use_container_width=True):
+            os.remove(FISICO_FILE)
+            st.success("Contagem zerada")
+            st.rerun()
+
+if df.empty:
+    st.info("👆 Faça upload da planilha do BI para começar")
+    st.stop()
+
+# Ensure Chave column
+if "Chave" not in df.columns:
+    df["Chave"] = df.apply(
+        lambda r: str(r.get("Codigo", "")) if str(r.get("Codigo", "")) not in ["", "nan", "None"] else str(r["Produto"]),
+        axis=1,
+    )
+
+fisico = load_fisico()
+
+# ── Stats ────────────────────────────────────────────────────────────────────
+total_produtos = len(df)
+total_conferidos = sum(1 for _, r in df.iterrows() if r["Chave"] in fisico)
+total_divergentes = sum(
+    1 for _, r in df.iterrows()
+    if r["Chave"] in fisico and fisico[r["Chave"]] != int(r["Qtd_Sistema"])
+)
+total_ok = total_conferidos - total_divergentes
+pct = int(100 * total_conferidos / total_produtos) if total_produtos > 0 else 0
+
 st.markdown(f"""
-<div class="main-header">
-    <div class="main-title">Pop Culture Hub</div>
-    <div class="main-subtitle">Séries · Filmes · Jogos · Livros</div>
+<div class="stat-row">
+    <div class="stat-card">
+        <div class="stat-value">{total_conferidos}/{total_produtos}</div>
+        <div class="stat-label">Conferidos ({pct}%)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{total_ok}</div>
+        <div class="stat-label">✓ Batendo</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value red">{total_divergentes}</div>
+        <div class="stat-label">✗ Divergentes</div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Data e Hora
-col_time, col_empty = st.columns([1, 3])
-with col_time:
-    st.markdown(f"""
-    <div class="glass-card glass-dark" style="text-align: center;">
-        <div class="card-label" style="justify-content: center;">🗓️ {dia_semana}</div>
-        <div class="card-value">{agora.strftime("%H:%M")}</div>
-        <div class="card-subtitle">{agora.strftime("%d de %B, %Y")}</div>
+# ── Filter ───────────────────────────────────────────────────────────────────
+cats = ["TODOS"] + sorted(df["Categoria"].unique().tolist())
+filter_cat = st.radio("Filtro", cats, horizontal=True, label_visibility="collapsed")
+
+tab_mapa, tab_contagem, tab_divergencias = st.tabs(["🗺️ Mapa", "📋 Contagem", "⚠️ Divergências"])
+
+# ── TAB: MAPA ────────────────────────────────────────────────────────────────
+with tab_mapa:
+    fig = build_treemap(df, fisico, filter_cat)
+    if fig:
+        st.plotly_chart(fig, use_container_width=True, config={
+            "displayModeBar": True,
+            "modeBarButtonsToRemove": ["toImage", "sendDataToCloud"],
+            "displaylogo": False, "scrollZoom": True,
+        })
+        st.markdown("""
+        <div style="text-align:center; font-size:0.65rem; color:#4a5568; margin-top:-10px;">
+            🟢 Batendo · 🔴 Divergente · 🟤 Não conferido · Toque p/ zoom
+        </div>
+        """, unsafe_allow_html=True)
+
+# ── TAB: CONTAGEM ────────────────────────────────────────────────────────────
+with tab_contagem:
+    st.markdown("""
+    <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-bottom:8px; line-height:1.5;">
+        📱 <b>Contou no galpão? Digite o físico aqui.</b><br>
+        <span style="color:#64748b; font-size:0.65rem;">
+            Botão "✓ Bate" → confirma rápido. Ou digite a qtd real.
+        </span>
     </div>
     """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════
-# SEÇÃO 1: FILMES & SÉRIES (TMDB + Notícias)
-# ═══════════════════════════════════════════════════════════════
+    filtered_df = df if filter_cat == "TODOS" else df[df["Categoria"] == filter_cat]
 
-st.markdown('<div class="section-title"><span class="section-icon">🎬</span> Filmes & Séries em Alta</div>', unsafe_allow_html=True)
+    show_filter = st.radio(
+        "Mostrar", ["Todos", "Não conferidos", "Divergentes"],
+        horizontal=True, label_visibility="collapsed", key="count_filter",
+    )
+    if show_filter == "Não conferidos":
+        filtered_df = filtered_df[~filtered_df["Chave"].isin(fisico.keys())]
+    elif show_filter == "Divergentes":
+        div_keys = [c for c in fisico if c in df["Chave"].values and fisico[c] != int(df[df["Chave"] == c]["Qtd_Sistema"].iloc[0])]
+        filtered_df = filtered_df[filtered_df["Chave"].isin(div_keys)]
 
-# Buscar dados do TMDB
-tmdb_data = get_tmdb_trending()
-if tmdb_data:
-    media_items = random.sample(tmdb_data, min(4, len(tmdb_data)))
-    using_tmdb = True
-else:
-    media_items = random.sample(FALLBACK_MEDIA, 4)
-    using_tmdb = False
+    search = st.text_input("Buscar", "", placeholder="🔍 ROUNDUP, BELT, FOX, código...", label_visibility="collapsed")
+    if search:
+        s = search.upper()
+        filtered_df = filtered_df[
+            filtered_df["Produto"].str.contains(s, case=False, na=False)
+            | filtered_df["Codigo"].str.contains(s, case=False, na=False)
+        ]
 
-cols_media = st.columns(4)
-glass_media = ["glass-purple", "glass-rose", "glass-blue", "glass-gold"]
-
-for i, item in enumerate(media_items):
-    with cols_media[i]:
-        emoji = "🎬" if item["tipo"] == "Filme" else "📺"
-        plataforma = item.get("onde", "Streaming")
-        
-        st.markdown(f"""
-        <div class="glass-card {glass_media[i]} media-card">
-            <div class="media-platform">{plataforma}</div>
-            <div class="media-rating">⭐ {item['nota']}</div>
-            <div style="margin-top: 2.5rem;">
-                <div class="card-label">{emoji} {item['tipo']} · {item.get('data', 'N/A')}</div>
-                <div class="card-value card-value-sm">{item['titulo']}</div>
-                <div class="card-subtitle" style="margin-top: 0.5rem;">{item.get('genero', 'Drama')}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# Notícias sobre Cinema e Streaming
-st.markdown("#### 📰 Últimas Notícias do Mundo do Entretenimento")
-
-col_news1, col_news2 = st.columns(2)
-
-with col_news1:
-    news_movies = get_news_by_topic("lançamentos cinema filmes 2024 2025", max_results=4)
-    if news_movies:
-        for item in news_movies[:4]:
-            titulo = item.title[:100] + "..." if len(item.title) > 100 else item.title
-            st.markdown(f"""
-            <div class="news-item">
-                <a href="{item.link}" target="_blank">{titulo}</a>
-                <div class="news-meta">🎬 Cinema · {item.get('published', 'Agora')[:16]}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    if filtered_df.empty:
+        st.info("Nenhum produto neste filtro")
     else:
-        st.info("Sem notícias recentes sobre cinema")
+        changed = False
+        for _, row in filtered_df.iterrows():
+            chave = row["Chave"]
+            prod = str(row["Produto"])
+            qtd_sys = int(row["Qtd_Sistema"])
+            current_fis = fisico.get(chave, None)
+            codigo = str(row.get("Codigo", ""))
 
-with col_news2:
-    news_series = get_news_by_topic("séries Netflix HBO Max Disney streaming", max_results=4)
-    if news_series:
-        for item in news_series[:4]:
-            titulo = item.title[:100] + "..." if len(item.title) > 100 else item.title
+            if current_fis is None:
+                status_icon, card_class = "⬜", ""
+            elif current_fis == qtd_sys:
+                status_icon, card_class = "🟢", "ok"
+            else:
+                status_icon, card_class = "🔴", "divergent"
+
+            sn = short_name(prod)
+            diff_text = ""
+            if current_fis is not None and current_fis != qtd_sys:
+                diff = current_fis - qtd_sys
+                diff_text = f' · <span class="diff">Diff: {diff:+d}</span>'
+
+            if current_fis is not None:
+                bad = " bad" if current_fis != qtd_sys else ""
+                fis_display = f'<span class="fis{bad}">Fís: {current_fis}</span>'
+            else:
+                fis_display = '<span style="color:#4a5568;">Fís: —</span>'
+
             st.markdown(f"""
-            <div class="news-item">
-                <a href="{item.link}" target="_blank">{titulo}</a>
-                <div class="news-meta">📺 Streaming · {item.get('published', 'Agora')[:16]}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Sem notícias recentes sobre séries")
-
-# ═══════════════════════════════════════════════════════════════
-# SEÇÃO 2: JOGOS (Lançamentos + Notícias)
-# ═══════════════════════════════════════════════════════════════
-
-st.markdown('<div class="section-title"><span class="section-icon">🎮</span> Lançamentos & Notícias de Games</div>', unsafe_allow_html=True)
-
-# Cards de jogos aguardados
-cols_games = st.columns(4)
-glass_games = ["glass-green", "glass-blue", "glass-red", "glass-purple"]
-
-for i, game in enumerate(FALLBACK_GAMES):
-    with cols_games[i]:
-        st.markdown(f"""
-        <div class="glass-card {glass_games[i]} game-card" style="min-height: 150px;">
-            <div style="position: absolute; top: 1rem; right: 1rem;">
-                <span class="badge badge-category">🎯 {game['genero']}</span>
-            </div>
-            <div class="card-label" style="margin-top: 0.5rem;">🎮 {game['plataforma']}</div>
-            <div class="card-value card-value-sm" style="margin-top: 0.5rem;">{game['titulo']}</div>
-            <div class="card-subtitle" style="margin-top: 0.5rem; color: #4ade80;">{game['status']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# Notícias sobre Jogos
-st.markdown("#### 🎯 Últimas Notícias da Indústria de Games")
-
-col_game_news1, col_game_news2 = st.columns(2)
-
-with col_game_news1:
-    news_ps5 = get_news_by_topic("PlayStation 5 PS5 jogos lançamentos", max_results=4, days=7)
-    if news_ps5:
-        for item in news_ps5[:4]:
-            titulo = item.title[:90] + "..." if len(item.title) > 90 else item.title
-            st.markdown(f"""
-            <div class="news-item" style="border-left-color: #4ade80;">
-                <a href="{item.link}" target="_blank">{titulo}</a>
-                <div class="news-meta">🎮 PlayStation · {item.get('published', 'Agora')[:16]}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="glass-card glass-dark">
-            <div class="card-subtitle">Sem atualizações recentes sobre PlayStation</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-with col_game_news2:
-    news_xbox = get_news_by_topic("Xbox Series X Nintendo Switch jogos", max_results=4, days=7)
-    if news_xbox:
-        for item in news_xbox[:4]:
-            titulo = item.title[:90] + "..." if len(item.title) > 90 else item.title
-            st.markdown(f"""
-            <div class="news-item" style="border-left-color: #22d3ee;">
-                <a href="{item.link}" target="_blank">{titulo}</a>
-                <div class="news-meta">🎯 Xbox/Nintendo · {item.get('published', 'Agora')[:16]}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="glass-card glass-dark">
-            <div class="card-subtitle">Sem atualizações recentes sobre Xbox/Nintendo</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# ═══════════════════════════════════════════════════════════════
-# SEÇÃO 3: LIVROS (Lançamentos + Literatura)
-# ═══════════════════════════════════════════════════════════════
-
-st.markdown('<div class="section-title"><span class="section-icon">📚</span> Literatura & Lançamentos Literários</div>', unsafe_allow_html=True)
-
-# Cards de livros em destaque
-cols_books = st.columns(3)
-book_colors = ["glass-rose", "glass-gold", "glass-purple"]
-
-for i, book in enumerate(FALLBACK_BOOKS):
-    with cols_books[i]:
-        st.markdown(f"""
-        <div class="glass-card {book_colors[i]} book-card" style="min-height: 140px;">
-            <div style="position: absolute; top: 1rem; right: 1rem;">
-                <span class="badge badge-category">📖 {book['destaque']}</span>
-            </div>
-            <div class="card-label" style="margin-top: 0.5rem;">{book['genero']}</div>
-            <div class="card-value card-value-sm" style="margin-top: 0.5rem; font-size: 1.2rem;">{book['titulo']}</div>
-            <div class="card-subtitle" style="margin-top: 0.5rem;">por {book['autor']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# Notícias sobre Livros
-st.markdown("#### 📖 Notícias do Mundo Literário")
-
-col_book_news = st.columns(1)[0]
-with col_book_news:
-    news_books = get_news_by_topic("lançamentos livros best-sellers literatura", max_results=6, days=14)
-    if news_books:
-        cols = st.columns(2)
-        for idx, item in enumerate(news_books[:6]):
-            with cols[idx % 2]:
-                titulo = item.title[:100] + "..." if len(item.title) > 100 else item.title
-                st.markdown(f"""
-                <div class="news-item book-card" style="margin-bottom: 1rem;">
-                    <a href="{item.link}" target="_blank">{titulo}</a>
-                    <div class="news-meta">📚 Literatura · {item.get('published', 'Agora')[:16]}</div>
+            <div class="prod-card {card_class}">
+                <div class="prod-name">{status_icon} {sn}</div>
+                <div class="prod-info">
+                    <span class="sys">Sis: {qtd_sys}</span> · {fis_display}{diff_text}
+                    <span style="float:right; color:#2d3748; font-size:0.6rem;">#{codigo}</span>
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
+
+            c1, c2, c3 = st.columns([1, 2, 1])
+            with c1:
+                if st.button("✓ Bate", key=f"ok_{chave}", use_container_width=True):
+                    fisico[chave] = qtd_sys
+                    changed = True
+            with c2:
+                new_val = st.number_input(
+                    "Físico", min_value=0,
+                    value=current_fis if current_fis is not None else None,
+                    step=1, key=f"inp_{chave}", label_visibility="collapsed",
+                    placeholder=f"Contar... (sis: {qtd_sys})",
+                )
+                if new_val is not None and new_val != current_fis:
+                    fisico[chave] = int(new_val)
+                    changed = True
+            with c3:
+                if current_fis is not None:
+                    if st.button("✗", key=f"clr_{chave}", use_container_width=True):
+                        fisico.pop(chave, None)
+                        changed = True
+
+        if changed:
+            save_fisico(fisico)
+            st.rerun()
+
+    st.divider()
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("✅ Tudo bate (filtro atual)", use_container_width=True, type="primary"):
+            for _, row in filtered_df.iterrows():
+                fisico[row["Chave"]] = int(row["Qtd_Sistema"])
+            save_fisico(fisico)
+            st.rerun()
+    with col_b:
+        if st.button("🗑️ Limpar contagem", use_container_width=True):
+            for _, row in filtered_df.iterrows():
+                fisico.pop(row["Chave"], None)
+            save_fisico(fisico)
+            st.rerun()
+
+# ── TAB: DIVERGÊNCIAS ────────────────────────────────────────────────────────
+with tab_divergencias:
+    divergentes = []
+    for _, row in df.iterrows():
+        chave = row["Chave"]
+        qtd_sys = int(row["Qtd_Sistema"])
+        qtd_fis = fisico.get(chave, None)
+        if qtd_fis is not None and qtd_fis != qtd_sys:
+            divergentes.append({
+                "Produto": short_name(str(row["Produto"])),
+                "Codigo": str(row.get("Codigo", "")),
+                "Sistema": qtd_sys,
+                "Físico": qtd_fis,
+                "Diff": qtd_fis - qtd_sys,
+                "Categoria": row["Categoria"],
+            })
+
+    if not divergentes:
+        nao_conf = total_produtos - total_conferidos
+        extra = f"<br><span style='font-size:0.7rem; color:#4a5568;'>{nao_conf} produtos ainda não conferidos</span>" if nao_conf > 0 else ""
+        st.markdown(f"""
+        <div style="text-align:center; padding:40px; color:#00d68f;">
+            <div style="font-size:2rem;">✓</div>
+            <div style="font-size:0.9rem; margin-top:8px;">Nenhuma divergência</div>
+            {extra}
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.info("Nenhuma notícia recente sobre lançamentos literários")
+        st.markdown(f"""
+        <div style="text-align:center; font-size:0.75rem; color:#ff4757; margin-bottom:8px;">
+            ⚠️ {len(divergentes)} divergência{"s" if len(divergentes) > 1 else ""}
+        </div>
+        """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════
-# DICAS DO DIA (CATEGORIA ALEATÓRIA)
-# ═══════════════════════════════════════════════════════════════
+        rows_html = ""
+        for d in sorted(divergentes, key=lambda x: x["Diff"]):
+            sign = "+" if d["Diff"] > 0 else ""
+            rows_html += f"""
+            <tr>
+                <td style="color:#e0e6ed">{d['Produto']}</td>
+                <td style="text-align:right; color:#4a90d9;">{d['Sistema']}</td>
+                <td style="text-align:right; color:#ff4757;">{d['Físico']}</td>
+                <td style="text-align:right; font-weight:700;">{sign}{d['Diff']}</td>
+            </tr>"""
 
-st.markdown('<div class="section-title"><span class="section-icon">💡</span> Dica do Dia</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <table class="div-table">
+            <thead><tr>
+                <th>Produto</th>
+                <th style="text-align:right">Sis.</th>
+                <th style="text-align:right">Fís.</th>
+                <th style="text-align:right">Diff</th>
+            </tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        """, unsafe_allow_html=True)
 
-dicas = [
-    {"cat": "🎬 Filme", "texto": "Assista 'Everything Everywhere All at Once' - um dos filmes mais criativos dos últimos anos disponível no Prime Video."},
-    {"cat": "📺 Série", "texto": "Não perca 'The Bear' no Star+ - drama culinário intenso e aclamado pela crítica."},
-    {"cat": "🎮 Jogo", "texto": "Experimente 'Hades' se gosta de jogos rogue-like com história envolvente - disponível em todas as plataformas."},
-    {"cat": "📚 Livro", "texto": "Leia 'Projeto Hail Mary' de Andy Weir - ficção científica inteligente do autor de 'Perdido em Marte'."},
-]
+        st.divider()
+        csv = pd.DataFrame(divergentes).to_csv(index=False)
+        st.download_button(
+            "📥 Exportar divergências (CSV)", csv,
+            f"divergencias_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            "text/csv", use_container_width=True,
+        )
 
-dica_hoje = random.choice(dicas)
-
+# ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown(f"""
-<div class="glass-card glass-dark" style="text-align: center; padding: 2rem;">
-    <div class="card-label" style="justify-content: center; font-size: 1rem; margin-bottom: 1rem;">{dica_hoje['cat']}</div>
-    <div style="font-size: 1.2rem; color: rgba(255,255,255,0.9); font-family: 'Outfit', sans-serif; line-height: 1.6;">
-        {dica_hoje['texto']}
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Botão de atualização
-st.markdown("<br>", unsafe_allow_html=True)
-col_btn = st.columns([1, 2, 1])
-with col_btn[1]:
-    if st.button("🔄 Atizar Dashboard de Entretenimento", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-# Footer
-st.markdown(f"""
-<div style="text-align: center; margin-top: 3rem; padding: 1rem; color: rgba(255,255,255,0.3); font-size: 0.75rem; border-top: 1px solid rgba(255,255,255,0.1);">
-    <div style="margin-bottom: 0.5rem;">Pop Culture Hub · Atualizado às {agora.strftime("%H:%M")}</div>
-    <div>Fontes: TMDB · Google News · Yahoo Entertainment</div>
-    <div style="margin-top: 0.5rem; font-size: 0.7rem;">
-        💡 Dica: Adicione sua chave da API TMDB para recomendações personalizadas de filmes e séries
-    </div>
+<div style="text-align:center; font-size:0.6rem; color:#2d3748; margin-top:1rem; padding:8px;">
+    CAMDA Quirinópolis · {datetime.now().strftime('%d/%m/%Y %H:%M')}
+    <br>Não entre em pânico 🐬
 </div>
 """, unsafe_allow_html=True)
