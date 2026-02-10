@@ -545,11 +545,11 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     is_mestre_upload = "Mestre" in upload_mode
 
     if is_mestre_upload:
-        st.caption(
-            "⚠️ O upload mestre **substitui todo o estoque**. "
-            "Use para a carga inicial ou quando quiser recomeçar do zero."
-        )
+        st.caption("O upload mestre substitui todo o estoque. Use para carga inicial ou recomecar do zero.")
     else:
-        st.caption(
-            "O upload parcial atualiza apenas os produtos presentes na planilha. "
-            "Produtos que não estão na planilha perm
+        st.caption("O upload parcial atualiza apenas os produtos presentes na planilha. Os demais permanecem inalterados.")
+
+    uploaded = st.file_uploader(
+        "Planilha XLSX",
+        type=["xlsx", "xls"],
+  
