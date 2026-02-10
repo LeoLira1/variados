@@ -179,25 +179,34 @@ def parse_excel(uploaded_file) -> pd.DataFrame:
         st.error(f"❌ Erro ao ler o arquivo: {e}")
         return pd.DataFrame()
 
-    # Find header row containing 'Produto'
+    # Find header row: must contain BOTH 'Produto' AND 'Quantidade' in same row
+    # This avoids false matches on filter description rows like
+    # "Grupo Produto Camda IN (HERBICIDAS,...)"
     header_idx = None
     for i, row in df_raw.iterrows():
-        vals = row.astype(str).str.upper().tolist()
-        if any("PRODUTO" in v for v in vals):
+        vals = [str(v).strip().upper() for v in row.tolist()]
+        has_produto = any(v == "PRODUTO" for v in vals)
+        has_qtd = any("QUANTIDADE" in v or v == "QTD" for v in vals)
+        if has_produto and has_qtd:
             header_idx = i
             break
 
     if header_idx is None:
-        # Fallback: try to find any row with column-like names
+        # Fallback: look for exact "Produto" cell alone
         for i, row in df_raw.iterrows():
-            vals = row.astype(str).str.upper().tolist()
-            if any("QUANTIDADE" in v or "QTD" in v for v in vals):
+            vals = [str(v).strip().upper() for v in row.tolist()]
+            if "PRODUTO" in vals:
                 header_idx = i
                 break
 
     if header_idx is None:
-        st.error("❌ Não encontrei as colunas 'Produto' e 'Quantidade' na planilha.")
-        st.info("💡 Verifique se o arquivo é o relatório do BI com o estoque.")
+        cols_found = []
+        for i, row in df_raw.iterrows():
+            vals = [str(v).strip() for v in row.tolist() if str(v).strip() not in ["", "nan"]]
+            if vals:
+                cols_found = vals
+                break
+        st.error(f"❌ Não encontrei as colunas 'Produto' e 'Quantidade'. Primeiras colunas: {cols_found}")
         return pd.DataFrame()
 
     df = df_raw.iloc[header_idx + 1:].copy()
