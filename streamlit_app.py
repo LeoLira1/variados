@@ -283,106 +283,128 @@ def parse_and_store(uploaded_file) -> tuple:
 
 # ── Treemap ──────────────────────────────────────────────────────────────────
 
-def build_treemap_html(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
-    """Build treemap as raw HTML using Plotly JS — more reliable on Streamlit Cloud."""
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
+    """Build treemap as pure HTML/CSS — no external dependencies."""
     if filter_cat != "TODOS":
         df = df[df["categoria"] == filter_cat]
     if df.empty:
         return ""
 
-    labels = []
-    parents = []
-    values = []
-    colors = []
-    custom_text = []
+    total_value = df["qtd_sistema"].sum()
+    if total_value == 0:
+        return ""
 
-    # Only add leaves (products) — let Plotly auto-calculate parents
+    # Group by category
+    categories = {}
     for _, row in df.iterrows():
-        qtd_sys = int(row["qtd_sistema"])
-        diff = int(row["diferenca"])
-        nota = str(row.get("nota", ""))
         cat = row["categoria"]
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(row)
 
-        sn = short_name(str(row["produto"]))
-        if len(sn) > 24:
-            sn = sn[:22] + "..."
+    # Sort categories by total weight descending
+    cat_totals = {cat: sum(int(r["qtd_sistema"]) for r in rows) for cat, rows in categories.items()}
+    sorted_cats = sorted(cat_totals.keys(), key=lambda c: cat_totals[c], reverse=True)
 
-        labels.append(sn)
-        parents.append(cat)
-        values.append(max(qtd_sys, 1))
+    blocks_html = ""
 
-        if diff == 0:
-            colors.append("#00d68f")
-            custom_text.append(f"OK {qtd_sys}")
-        elif diff < 0:
-            colors.append("#ff4757")
-            nota_txt = f" - {nota}" if nota else ""
-            custom_text.append(f"Falta {abs(diff)} (Sis:{qtd_sys} Fis:{qtd_sys+diff}){nota_txt}")
-        else:
-            colors.append("#ffa502")
-            nota_txt = f" - {nota}" if nota else ""
-            custom_text.append(f"Sobra +{diff} (Sis:{qtd_sys} Fis:{qtd_sys+diff}){nota_txt}")
+    for cat in sorted_cats:
+        rows = categories[cat]
+        cat_total = cat_totals[cat]
+        cat_pct = max((cat_total / total_value) * 100, 5)  # min 5% for visibility
 
-    # Add category nodes
-    for cat in sorted(df["categoria"].unique()):
-        labels.append(cat)
-        parents.append("ESTOQUE")
-        values.append(0)
-        colors.append("#1a2332")
-        custom_text.append("")
+        # Sort products by qty descending within category
+        rows_sorted = sorted(rows, key=lambda r: int(r["qtd_sistema"]), reverse=True)
 
-    # Root
-    labels.append("ESTOQUE")
-    parents.append("")
-    values.append(0)
-    colors.append("#1a2332")
-    custom_text.append("")
+        products_html = ""
+        for r in rows_sorted:
+            qtd_sys = int(r["qtd_sistema"])
+            diff = int(r["diferenca"])
+            nota = str(r.get("nota", ""))
+            sn = short_name(str(r["produto"]))
 
-    import json
-    labels_js = json.dumps(labels, ensure_ascii=False)
-    parents_js = json.dumps(parents, ensure_ascii=False)
-    values_js = json.dumps(values)
-    colors_js = json.dumps(colors)
-    text_js = json.dumps(custom_text, ensure_ascii=False)
+            # Size relative to category
+            pct_in_cat = max((qtd_sys / cat_total) * 100, 3) if cat_total > 0 else 10
 
-    html = f"""
-    <div id="treemap" style="width:100%; height:560px;"></div>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <script>
-    var data = [{{
-        type: "treemap",
-        labels: {labels_js},
-        parents: {parents_js},
-        values: {values_js},
-        text: {text_js},
-        textinfo: "label+text",
-        marker: {{
-            colors: {colors_js},
-            line: {{ width: 1.5, color: "#0a0f1a" }}
-        }},
-        textfont: {{ family: "monospace", size: 11 }},
-        hovertemplate: "<b>%{{label}}</b><br>%{{text}}<extra></extra>",
-        pathbar: {{ visible: true, thickness: 20, edgeshape: ">" }},
-        tiling: {{ packing: "squarify", pad: 3 }},
-        branchvalues: "total"
-    }}];
+            if diff == 0:
+                bg = "#00d68f"
+                text_color = "#0a2e1a"
+                info = f"{qtd_sys}"
+            elif diff < 0:
+                bg = "#ff4757"
+                text_color = "#fff"
+                nota_txt = f" · {nota}" if nota else ""
+                info = f"Falta {abs(diff)}{nota_txt}"
+            else:
+                bg = "#ffa502"
+                text_color = "#1a1000"
+                nota_txt = f" · {nota}" if nota else ""
+                info = f"Sobra +{diff}{nota_txt}"
 
-    var layout = {{
-        paper_bgcolor: "#0a0f1a",
-        plot_bgcolor: "#0a0f1a",
-        margin: {{ t: 5, l: 2, r: 2, b: 2 }},
-        font: {{ color: "#e0e6ed" }}
-    }};
+            # Truncate name for small blocks
+            max_chars = max(8, int(pct_in_cat * 0.4))
+            display_name = sn if len(sn) <= max_chars else sn[:max_chars-1] + "…"
 
-    Plotly.newPlot("treemap", data, layout, {{
-        displayModeBar: true,
-        displaylogo: false,
-        scrollZoom: true,
-        modeBarButtonsToRemove: ["toImage", "sendDataToCloud"]
-    }});
-    </script>
+            # Font size based on block size
+            font_size = "0.7rem" if pct_in_cat > 8 else "0.55rem"
+            info_size = "0.55rem" if pct_in_cat > 8 else "0.45rem"
+
+            products_html += f"""
+            <div style="
+                flex: {pct_in_cat} 1 0;
+                min-width: 50px; min-height: 36px;
+                background: {bg}; color: {text_color};
+                border-radius: 4px; padding: 3px 5px;
+                overflow: hidden; position: relative;
+                display: flex; flex-direction: column; justify-content: center;
+                border: 1px solid rgba(10,15,26,0.4);
+            " title="{sn} | Sis: {qtd_sys} | Fís: {qtd_sys+diff} | Diff: {diff:+d}">
+                <div style="font-size:{font_size}; font-weight:700; line-height:1.1;
+                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    {display_name}
+                </div>
+                <div style="font-size:{info_size}; opacity:0.85; line-height:1.1;
+                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+                    font-family:'JetBrains Mono',monospace;">
+                    {info}
+                </div>
+            </div>
+            """
+
+        # Category block
+        blocks_html += f"""
+        <div style="
+            flex: {cat_pct} 1 0;
+            min-width: 80px; min-height: 60px;
+            background: #111827; border-radius: 8px;
+            padding: 4px; overflow: hidden;
+            border: 1px solid #1e293b;
+            display: flex; flex-direction: column;
+        ">
+            <div style="font-size:0.6rem; color:#64748b; text-transform:uppercase;
+                letter-spacing:1px; padding:2px 4px; font-weight:700;
+                font-family:'JetBrains Mono',monospace;">
+                {cat} <span style="color:#2d3748;">({len(rows_sorted)})</span>
+            </div>
+            <div style="flex:1; display:flex; flex-wrap:wrap; gap:2px; align-content:flex-start;">
+                {products_html}
+            </div>
+        </div>
+        """
+
+    return f"""
+    <div style="
+        display: flex; flex-wrap: wrap; gap: 4px;
+        background: #0a0f1a; border-radius: 10px;
+        padding: 4px; min-height: 400px;
+        align-content: flex-start;
+    ">
+        {blocks_html}
+    </div>
+    <div style="text-align:center; font-size:0.6rem; color:#4a5568; margin-top:6px;">
+        🟢 OK · 🔴 Faltando · 🟡 Sobrando · Segure para ver detalhes
+    </div>
     """
-    return html
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -475,15 +497,9 @@ tab_mapa, tab_divergencias, tab_historico = st.tabs(["🗺️ Mapa", "⚠️ Div
 
 # ── TAB: MAPA ────────────────────────────────────────────────────────────────
 with tab_mapa:
-    import streamlit.components.v1 as components
-    treemap_html = build_treemap_html(df, filter_cat)
+    treemap_html = build_css_treemap(df, filter_cat)
     if treemap_html:
-        components.html(treemap_html, height=580, scrolling=False)
-        st.markdown("""
-        <div style="text-align:center; font-size:0.65rem; color:#4a5568; margin-top:-10px;">
-            🟢 OK · 🔴 Faltando · 🟡 Sobrando · Toque p/ zoom
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(treemap_html, unsafe_allow_html=True)
     else:
         st.info("Nenhum produto para exibir neste filtro.")
 
