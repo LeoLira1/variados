@@ -551,4 +551,181 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         st.caption("O upload parcial atualiza apenas os produtos presentes na planilha. Os demais permanecem inalterados.")
 
     uploaded = st.file_uploader(
-        "
+        "Planilha XLSX",
+        type=["xlsx", "xls"],
+        label_visibility="collapsed",
+        key="upload_main",
+    )
+
+    if uploaded:
+        if st.button("🚀 Processar", type="primary"):
+            with st.spinner("Processando..."):
+                if is_mestre_upload:
+                    ok, msg = upload_mestre(uploaded)
+                else:
+                    ok, msg = upload_parcial(uploaded)
+
+            if ok:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+
+    # Área de administração
+    if has_mestre:
+        st.markdown("---")
+        col_adm1, col_adm2 = st.columns([3, 1])
+        with col_adm2:
+            if st.session_state.confirm_reset:
+                st.warning("Tem certeza?")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Sim, limpar"):
+                        reset_db()
+                        st.session_state.confirm_reset = False
+                        st.rerun()
+                with c2:
+                    if st.button("Cancelar"):
+                        st.session_state.confirm_reset = False
+                        st.rerun()
+            else:
+                if st.button("🗑️ Limpar BD"):
+                    st.session_state.confirm_reset = True
+                    st.rerun()
+
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+if has_mestre:
+    df_mestre = get_current_stock()
+
+    # Busca
+    search_term = st.text_input(
+        "🔍 Buscar no Mestre",
+        placeholder="Nome ou Código...",
+        label_visibility="collapsed",
+    )
+
+    df_view = df_mestre.copy()
+    if search_term:
+        mask = (
+            df_view["produto"].astype(str).str.contains(search_term, case=False, na=False)
+            | df_view["codigo"].astype(str).str.contains(search_term, case=False, na=False)
+        )
+        df_view = df_view[mask]
+
+    # Stats
+    n_ok = len(df_view[df_view["status"] == "ok"])
+    n_falta = len(df_view[df_view["status"] == "falta"])
+    n_sobra = len(df_view[df_view["status"] == "sobra"])
+    n_danificado = len(df_view[df_view["status"] == "danificado"])
+
+    # Produtos nunca contados (sem ultima_contagem)
+    n_sem_contagem = len(
+        df_view[
+            (df_view["ultima_contagem"].isna())
+            | (df_view["ultima_contagem"].astype(str).isin(["", "nan", "None"]))
+        ]
+    )
+
+    st.markdown(f"""
+    <div class="stat-row">
+        <div class="stat-card">
+            <div class="stat-value">{len(df_view)}</div>
+            <div class="stat-label">Total</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{n_ok}</div>
+            <div class="stat-label">OK</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value red">{n_falta}</div>
+            <div class="stat-label">Faltas</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value amber">{n_sobra}</div>
+            <div class="stat-label">Sobras</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value purple">{n_danificado}</div>
+            <div class="stat-label">Danificados</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value blue">{n_sem_contagem}</div>
+            <div class="stat-label">Sem Contagem</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Filtro por categoria
+    cats = ["TODOS"] + sorted(df_view["categoria"].unique().tolist())
+    f_cat = st.radio("Filtro", cats, horizontal=True, label_visibility="collapsed")
+
+    # Tabs
+    t1, t2, t3, t4, t5 = st.tabs([
+        "🗺️ Mapa Estoque",
+        "⚠️ Divergências",
+        "💔 Danificados",
+        "🔘 Sem Contagem",
+        "📝 Log de Uploads",
+    ])
+
+    with t1:
+        st.markdown(build_css_treemap(df_view, f_cat), unsafe_allow_html=True)
+
+    with t2:
+        df_div = df_view[(df_view["status"] == "falta") | (df_view["status"] == "sobra")]
+        if df_div.empty:
+            st.info("Nenhuma divergência encontrada.")
+        else:
+            st.dataframe(
+                df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "ultima_contagem"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with t3:
+        df_dan = df_view[df_view["status"] == "danificado"]
+        if df_dan.empty:
+            st.info("Nenhum produto danificado.")
+        else:
+            st.dataframe(
+                df_dan[["codigo", "produto", "qtd_sistema", "nota", "ultima_contagem"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with t4:
+        df_sem = df_view[
+            (df_view["ultima_contagem"].isna())
+            | (df_view["ultima_contagem"].astype(str).isin(["", "nan", "None"]))
+        ]
+        if df_sem.empty:
+            st.success("Todos os produtos foram contados! 🎉")
+        else:
+            st.caption(f"{len(df_sem)} produtos ainda não tiveram contagem parcial.")
+            st.dataframe(
+                df_sem[["codigo", "produto", "categoria", "qtd_sistema"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with t5:
+        conn = get_db()
+        df_hist = pd.read_sql_query(
+            "SELECT data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes "
+            "FROM historico_uploads ORDER BY id DESC LIMIT 20",
+            conn,
+        )
+        conn.close()
+        if df_hist.empty:
+            st.info("Nenhum upload registrado.")
+        else:
+            st.dataframe(df_hist, hide_index=True, use_container_width=True)
+
+else:
+    st.markdown(
+        '<div style="text-align:center; color:#64748b; padding:60px 20px; font-size:1rem;">'
+        "Faça o upload da planilha mestre acima para começar ☝️"
+        "</div>",
+        unsafe_allow_html=True,
+    )
