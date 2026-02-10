@@ -534,15 +534,16 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
 
     # Seleção do tipo de upload
+    opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
+    opcao_parcial = "PARCIAL (atualizar contagem do dia)"
     upload_mode = st.radio(
         "Tipo de Upload",
-        ["🔵 Mestre (carga completa)" if not has_mestre else "🔵 Mestre (substituir tudo)",
-         "🟢 Parcial (atualizar contagem do dia)"],
+        [opcao_mestre, opcao_parcial],
         index=0 if not has_mestre else 1,
         horizontal=True,
         label_visibility="collapsed",
     )
-    is_mestre_upload = "Mestre" in upload_mode
+    is_mestre_upload = "MESTRE" in upload_mode
 
     if is_mestre_upload:
         st.caption("O upload mestre substitui todo o estoque. Use para carga inicial ou recomecar do zero.")
@@ -550,6 +551,4 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         st.caption("O upload parcial atualiza apenas os produtos presentes na planilha. Os demais permanecem inalterados.")
 
     uploaded = st.file_uploader(
-        "Planilha XLSX",
-        type=["xlsx", "xls"],
-  
+        "
