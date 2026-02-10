@@ -14,6 +14,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── Session State ────────────────────────────────────────────────────────────
+if "processed_file" not in st.session_state:
+    st.session_state.processed_file = None
+if "df_cache" not in st.session_state:
+    st.session_state.df_cache = None
+
 # ── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -112,17 +118,13 @@ def get_db():
 
 
 def get_latest_data() -> pd.DataFrame:
-    """Get the most recent upload's data."""
     conn = get_db()
-    # Get latest upload date
     row = conn.execute("SELECT data_upload FROM contagens ORDER BY id DESC LIMIT 1").fetchone()
     if row is None:
         conn.close()
         return pd.DataFrame()
-    latest_date = row[0]
     df = pd.read_sql_query(
-        "SELECT * FROM contagens WHERE data_upload = ?",
-        conn, params=(latest_date,)
+        "SELECT * FROM contagens WHERE data_upload = ?", conn, params=(row[0],)
     )
     conn.close()
     return df
@@ -142,7 +144,6 @@ def classify_product(name: str) -> str:
 
 
 def short_name(prod: str) -> str:
-    """Remove category prefix for cleaner display."""
     prefixes = ["HERBICIDA ", "FUNGICIDA ", "INSETICIDA ", "NEMATICIDA ",
                 "ADUBO FOLIAR ", "ADUBO Q.", "OLEO VEGETAL ", "OLEO MINERAL "]
     up = prod.upper()
@@ -153,52 +154,35 @@ def short_name(prod: str) -> str:
 
 
 def parse_annotation(nota: str, qtd_sistema: int) -> tuple:
-    """
-    Parse annotations like:
-      'falta 6 serginho'       → (qtd_sistema - 6, -6, 'serginho')
-      'passa 8'                → (qtd_sistema + 8, +8, '')
-      'passando 20 investigar' → (qtd_sistema + 20, +20, 'investigar')
-
-    Returns: (qtd_fisica, diferenca, observacao)
-    """
     if not nota or str(nota).strip() in ["", "nan", "None"]:
         return (qtd_sistema, 0, "")
 
     text = str(nota).strip().lower()
 
-    # Pattern: "falta X ..." → physical is LESS than system
-    match_falta = re.match(r"falta\s+(\d+)\s*(.*)", text)
-    if match_falta:
-        falta = int(match_falta.group(1))
-        obs = match_falta.group(2).strip()
-        return (qtd_sistema - falta, -falta, obs)
+    m = re.match(r"falta\s+(\d+)\s*(.*)", text)
+    if m:
+        falta = int(m.group(1))
+        return (qtd_sistema - falta, -falta, m.group(2).strip())
 
-    # Pattern: "passa X ..." or "passando X ..." → physical is MORE than system
-    match_passa = re.match(r"pass(?:a|ando)\s+(\d+)\s*(.*)", text)
-    if match_passa:
-        sobra = int(match_passa.group(1))
-        obs = match_passa.group(2).strip()
-        return (qtd_sistema + sobra, +sobra, obs)
+    m = re.match(r"pass(?:a|ando)\s+(\d+)\s*(.*)", text)
+    if m:
+        sobra = int(m.group(1))
+        return (qtd_sistema + sobra, +sobra, m.group(2).strip())
 
-    # Pattern: "sobra X ..." or "sobrando X ..."
-    match_sobra = re.match(r"sobr(?:a|ando)\s+(\d+)\s*(.*)", text)
-    if match_sobra:
-        sobra = int(match_sobra.group(1))
-        obs = match_sobra.group(2).strip()
-        return (qtd_sistema + sobra, +sobra, obs)
+    m = re.match(r"sobr(?:a|ando)\s+(\d+)\s*(.*)", text)
+    if m:
+        sobra = int(m.group(1))
+        return (qtd_sistema + sobra, +sobra, m.group(2).strip())
 
-    # Unrecognized annotation — keep as note, no difference
     return (qtd_sistema, 0, str(nota).strip())
 
 
 def parse_and_store(uploaded_file) -> tuple:
-    """Parse Excel, extract annotations, store in SQLite. Returns (success, message, count)."""
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
     except Exception as e:
-        return (False, f"Erro ao ler arquivo: {e}", 0)
+        return (False, f"Erro ao ler arquivo: {e}", None)
 
-    # Find header: row with BOTH 'Produto' AND 'Quantidade'
     header_idx = None
     for i, row in df_raw.iterrows():
         vals = [str(v).strip().upper() for v in row.tolist()]
@@ -209,13 +193,12 @@ def parse_and_store(uploaded_file) -> tuple:
             break
 
     if header_idx is None:
-        return (False, "Colunas 'Produto' e 'Quantidade' não encontradas.", 0)
+        return (False, "Colunas 'Produto' e 'Quantidade' não encontradas.", None)
 
     df = df_raw.iloc[header_idx + 1:].copy()
     raw_cols = df_raw.iloc[header_idx].tolist()
     df.columns = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(raw_cols)]
 
-    # Map columns
     col_prod, col_qtd, col_cod, col_nota = None, None, None, None
     for c in df.columns:
         cu = c.upper()
@@ -225,19 +208,15 @@ def parse_and_store(uploaded_file) -> tuple:
             col_qtd = c
         elif ("CÓDIGO" in cu or "CODIGO" in cu) and col_cod is None:
             col_cod = c
-        elif ("CUSTO" in cu or "OBS" in cu or "NOTA" in cu) and col_nota is None:
-            col_nota = c
 
-    # If col_nota wasn't found by name, use the last column (column E = index 4)
-    if col_nota is None:
-        all_cols = list(df.columns)
-        if len(all_cols) >= 5:
-            col_nota = all_cols[4]
+    # Column E (index 4) is where you put annotations
+    all_cols = list(df.columns)
+    if len(all_cols) >= 5:
+        col_nota = all_cols[4]
 
     if col_prod is None or col_qtd is None:
-        return (False, f"Colunas encontradas: {list(df.columns)}", 0)
+        return (False, f"Colunas: {list(df.columns)} — faltou Produto/Quantidade", None)
 
-    # Build clean dataframe
     records = []
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -247,7 +226,6 @@ def parse_and_store(uploaded_file) -> tuple:
         codigo = str(row.get(col_cod, "")).strip() if col_cod else ""
         nota_raw = str(row.get(col_nota, "")).strip() if col_nota else ""
 
-        # Skip bad rows
         if produto.upper() in ["", "NAN", "NONE", "SUM", "TOTAL", "PRODUTO"]:
             continue
         try:
@@ -257,19 +235,17 @@ def parse_and_store(uploaded_file) -> tuple:
         if qtd_sistema <= 0:
             continue
 
-        # Clean nota — remove "CUSTO UNITÁRIO" header spillover and numeric-only values
+        # Filter out cost values and header spillover
         if nota_raw.upper() in ["NAN", "NONE", "CUSTO UNITÁRIO", ""]:
             nota_raw = ""
-        # If nota is just a number (cost value), ignore it
         try:
             float(nota_raw.replace(",", "."))
-            nota_raw = ""  # It's a cost value, not an annotation
+            nota_raw = ""
         except ValueError:
             pass
 
         categoria = classify_product(produto)
         qtd_fisica, diferenca, observacao = parse_annotation(nota_raw, qtd_sistema)
-
         status = "ok" if diferenca == 0 else ("falta" if diferenca < 0 else "sobra")
 
         records.append({
@@ -285,14 +261,13 @@ def parse_and_store(uploaded_file) -> tuple:
         })
 
     if not records:
-        return (False, "Nenhum produto válido encontrado.", 0)
+        return (False, "Nenhum produto válido encontrado.", None)
 
-    # Store in database
+    # Store in DB
     conn = get_db()
     df_records = pd.DataFrame(records)
     df_records.to_sql("contagens", conn, if_exists="append", index=False)
 
-    # Save summary to historico
     n_div = sum(1 for r in records if r["status"] != "ok")
     n_falta = sum(1 for r in records if r["status"] == "falta")
     n_sobra = sum(1 for r in records if r["status"] == "sobra")
@@ -303,7 +278,7 @@ def parse_and_store(uploaded_file) -> tuple:
     conn.commit()
     conn.close()
 
-    return (True, f"{len(records)} produtos · {n_div} divergências detectadas", len(records))
+    return (True, f"{len(records)} produtos · {n_div} divergências detectadas", df_records)
 
 
 # ── Treemap ──────────────────────────────────────────────────────────────────
@@ -343,14 +318,14 @@ def build_treemap(df: pd.DataFrame, filter_cat: str = "TODOS"):
         values.append(max(qtd_sys, 1))
 
         if diff == 0:
-            colors.append("#00d68f")  # Green — OK
+            colors.append("#00d68f")
             custom_text.append(f"✓ {qtd_sys}")
         elif diff < 0:
-            colors.append("#ff4757")  # Red — missing
+            colors.append("#ff4757")
             nota_txt = f" · {nota}" if nota else ""
             custom_text.append(f"Falta {abs(diff)} (Sis:{qtd_sys} Fís:{qtd_sys+diff}){nota_txt}")
         else:
-            colors.append("#ffa502")  # Amber — excess
+            colors.append("#ffa502")
             nota_txt = f" · {nota}" if nota else ""
             custom_text.append(f"Sobra +{diff} (Sis:{qtd_sys} Fís:{qtd_sys+diff}){nota_txt}")
 
@@ -380,10 +355,15 @@ def build_treemap(df: pd.DataFrame, filter_cat: str = "TODOS"):
 st.markdown('<div class="main-title">CAMDA ESTOQUE</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">MAPA DE CALOR · QUIRINÓPOLIS</div>', unsafe_allow_html=True)
 
-# ── Upload ───────────────────────────────────────────────────────────────────
-df = get_latest_data()
+# ── Load data: session cache first, then DB ──────────────────────────────────
+df = st.session_state.df_cache
+if df is None or df.empty:
+    df = get_latest_data()
+    if not df.empty:
+        st.session_state.df_cache = df
 
-with st.expander("📤 Upload da Planilha Conferida", expanded=df.empty):
+# ── Upload ───────────────────────────────────────────────────────────────────
+with st.expander("📤 Upload da Planilha Conferida", expanded=(df is None or df.empty)):
     st.markdown("""
     <div style="font-size:0.7rem; color:#64748b; margin-bottom:6px; line-height:1.4;">
         Suba a planilha do BI <b>com suas anotações</b> na coluna E.<br>
@@ -394,16 +374,29 @@ with st.expander("📤 Upload da Planilha Conferida", expanded=df.empty):
     """, unsafe_allow_html=True)
 
     uploaded = st.file_uploader("XLSX", type=["xlsx", "xls"], label_visibility="collapsed")
-    if uploaded is not None:
+
+    # Only process if it's a NEW file (not already processed)
+    if uploaded is not None and st.session_state.processed_file != uploaded.name:
         with st.spinner("🔄 Lendo planilha e detectando divergências..."):
-            ok, msg, count = parse_and_store(uploaded)
+            ok, msg, df_result = parse_and_store(uploaded)
         if ok:
+            st.session_state.processed_file = uploaded.name
+            st.session_state.df_cache = df_result
             st.success(f"✅ {msg}")
             st.rerun()
         else:
             st.error(f"❌ {msg}")
+    elif uploaded is not None and st.session_state.processed_file == uploaded.name:
+        # Already processed this file
+        st.caption(f"✅ Arquivo '{uploaded.name}' já processado.")
 
-if df.empty:
+# Reload from cache after potential rerun
+df = st.session_state.df_cache
+if df is None or df.empty:
+    df = get_latest_data()
+    st.session_state.df_cache = df
+
+if df is None or df.empty:
     st.info("👆 Faça upload da planilha conferida para gerar o mapa")
     st.stop()
 
@@ -414,7 +407,6 @@ n_falta = len(df[df["status"] == "falta"])
 n_sobra = len(df[df["status"] == "sobra"])
 n_div = n_falta + n_sobra
 
-# Upload date
 data_upload = df["data_upload"].iloc[0] if "data_upload" in df.columns else ""
 
 st.markdown(f"""
@@ -462,7 +454,6 @@ with tab_mapa:
 # ── TAB: DIVERGÊNCIAS ────────────────────────────────────────────────────────
 with tab_divergencias:
     df_div = df[df["status"] != "ok"].copy()
-
     if filter_cat != "TODOS":
         df_div = df_div[df_div["categoria"] == filter_cat]
 
@@ -509,8 +500,7 @@ with tab_divergencias:
         """, unsafe_allow_html=True)
 
         st.divider()
-        export_data = df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota"]].copy()
-        csv = export_data.to_csv(index=False)
+        csv = df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota"]].to_csv(index=False)
         st.download_button(
             "📥 Exportar divergências", csv,
             f"divergencias_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
@@ -520,13 +510,11 @@ with tab_divergencias:
 # ── TAB: HISTÓRICO ───────────────────────────────────────────────────────────
 with tab_historico:
     conn = get_db()
-    df_hist = pd.read_sql_query(
-        "SELECT * FROM historico ORDER BY data DESC LIMIT 30", conn
-    )
+    df_hist = pd.read_sql_query("SELECT * FROM historico ORDER BY data DESC LIMIT 30", conn)
     conn.close()
 
     if df_hist.empty:
-        st.info("Histórico vazio — suba planilhas para começar a rastrear.")
+        st.info("Histórico vazio.")
     else:
         st.markdown("""
         <div style="font-size:0.75rem; color:#94a3b8; text-align:center; margin-bottom:8px;">
@@ -551,20 +539,17 @@ with tab_historico:
                 paper_bgcolor="#0a0f1a", plot_bgcolor="#0a0f1a",
                 margin=dict(t=10, l=30, r=10, b=30), height=250,
                 font=dict(family="JetBrains Mono", size=10, color="#64748b"),
-                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center",
-                           font=dict(size=10)),
+                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
                 xaxis=dict(gridcolor="#1e293b", showgrid=False),
                 yaxis=dict(gridcolor="#1e293b", title="Qtd"),
             )
             st.plotly_chart(fig_hist, use_container_width=True)
 
-        # Table
         rows_html = ""
         for _, h in df_hist.iterrows():
-            d = str(h["data"])[:16]
             rows_html += f"""
             <tr>
-                <td style="color:#94a3b8">{d}</td>
+                <td style="color:#94a3b8">{str(h['data'])[:16]}</td>
                 <td style="text-align:right; color:#e0e6ed">{int(h['total_produtos'])}</td>
                 <td style="text-align:right; color:#ff4757">{int(h['total_faltando'])}</td>
                 <td style="text-align:right; color:#ffa502">{int(h['total_sobrando'])}</td>
@@ -582,7 +567,6 @@ with tab_historico:
         </table>
         """, unsafe_allow_html=True)
 
-        # Admin: clear DB
         st.divider()
         if st.button("🗑️ Limpar banco de dados", use_container_width=True):
             conn = get_db()
@@ -590,13 +574,14 @@ with tab_historico:
             conn.execute("DELETE FROM historico")
             conn.commit()
             conn.close()
-            st.success("Banco limpo")
+            st.session_state.df_cache = None
+            st.session_state.processed_file = None
             st.rerun()
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="text-align:center; font-size:0.6rem; color:#2d3748; margin-top:1rem; padding:8px;">
-    CAMDA Quirinópolis · {data_upload[:16] if data_upload else ''} · v2
+    CAMDA Quirinópolis · {data_upload[:16] if data_upload else ''}
     <br>Não entre em pânico 🐬
 </div>
 """, unsafe_allow_html=True)
