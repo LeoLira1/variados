@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import sqlite3
 import re
 import os
@@ -242,7 +241,7 @@ def parse_and_store(uploaded_file) -> tuple:
 
     return (True, f"{len(records)} produtos processados", df_records)
 
-# ── Treemap ──────────────────────────────────────────────────────────────────
+# ── Treemap (Visualização Grid) ──────────────────────────────────────────────
 
 def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
     if filter_cat != "TODOS":
@@ -250,46 +249,50 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
     if df.empty: return ""
 
     df["qtd_sistema"] = pd.to_numeric(df["qtd_sistema"], errors='coerce').fillna(0)
-    total_value = df["qtd_sistema"].sum() or len(df)
-
+    
+    # Agrupa por categoria
     categories = {}
     for _, row in df.iterrows():
         cat = row["categoria"]
         if cat not in categories: categories[cat] = []
         categories[cat].append(row)
 
+    # Ordena categorias por volume total
     sorted_cats = sorted(categories.keys(), key=lambda c: sum(int(r["qtd_sistema"]) for r in categories[c]), reverse=True)
     blocks_html = ""
 
     for cat in sorted_cats:
         rows = categories[cat]
-        cat_total = sum(int(r["qtd_sistema"]) for r in rows) or 1
-        cat_pct = max((cat_total / total_value) * 100, 5)
-
+        
         products_html = ""
+        # Ordena produtos por quantidade (opcional, apenas para manter organizacao visual)
         for r in sorted(rows, key=lambda x: int(x["qtd_sistema"]), reverse=True):
             qs, diff = int(r["qtd_sistema"]), int(r["diferenca"])
-            pct_in_cat = max((qs / cat_total) * 100, 3)
+            
+            # Cores
             bg = "#00d68f" if diff == 0 else ("#ff4757" if diff < 0 else "#ffa502")
             txt = "#0a2e1a" if diff >= 0 else "#fff"
             info = f"{qs}" if diff == 0 else (f"Faltam {abs(diff)}" if diff < 0 else f"Sobram {diff}")
 
+            # CARD FIXO: width 110px, height 60px
             products_html += f"""
-            <div style="flex: {pct_in_cat} 1 0; min-width: 55px; min-height: 40px; background: {bg}; color: {txt}; 
-                 border-radius: 4px; padding: 4px; margin: 1px; display: flex; flex-direction: column; justify-content: center;
-                 overflow: hidden; border: 1px solid rgba(0,0,0,0.1);" title="{r['produto']}">
-                <div style="font-size: 0.6rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{short_name(r['produto'])}</div>
-                <div style="font-size: 0.5rem; opacity: 0.8; font-family: monospace;">{info}</div>
+            <div style="width: 110px; height: 60px; background: {bg}; color: {txt}; 
+                 border-radius: 4px; padding: 4px; margin: 2px; 
+                 display: flex; flex-direction: column; justify-content: center; align-items: center;
+                 overflow: hidden; border: 1px solid rgba(0,0,0,0.1);" title="{r['produto']} - Qtd: {qs}">
+                <div style="font-size: 0.55rem; font-weight: 700; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{short_name(r['produto'])}</div>
+                <div style="font-size: 0.65rem; opacity: 0.9; font-family: monospace; font-weight: bold; margin-top: 2px;">{info}</div>
             </div>"""
 
+        # Container da Categoria
         blocks_html += f"""
-        <div style="flex: {cat_pct} 1 0; min-width: 120px; background: #111827; border-radius: 8px; padding: 8px; 
-             margin: 2px; border: 1px solid #1e293b; display: flex; flex-direction: column;">
-            <div style="font-size: 0.6rem; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">{cat}</div>
-            <div style="display: flex; flex-wrap: wrap; flex: 1;">{products_html}</div>
+        <div style="width: 100%; background: #111827; border-radius: 8px; padding: 8px; 
+             margin-bottom: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column;">
+            <div style="font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #1e293b; padding-bottom: 4px;">{cat}</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 2px;">{products_html}</div>
         </div>"""
 
-    return f'<div style="display: flex; flex-wrap: wrap; gap: 4px; min-height: 450px;">{blocks_html}</div>'
+    return f'<div style="display: flex; flex-direction: column; min-height: 450px;">{blocks_html}</div>'
 
 # ── MAIN APP ─────────────────────────────────────────────────────────────────
 
