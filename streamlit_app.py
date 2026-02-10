@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import plotly.graph_objects as go  # Used for history chart only
 import sqlite3
 import re
 import os
@@ -283,69 +283,106 @@ def parse_and_store(uploaded_file) -> tuple:
 
 # ── Treemap ──────────────────────────────────────────────────────────────────
 
-def build_treemap(df: pd.DataFrame, filter_cat: str = "TODOS"):
+def build_treemap_html(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
+    """Build treemap as raw HTML using Plotly JS — more reliable on Streamlit Cloud."""
     if filter_cat != "TODOS":
         df = df[df["categoria"] == filter_cat]
     if df.empty:
-        return None
+        return ""
 
-    labels, parents, values, colors, custom_text = [], [], [], [], []
+    labels = []
+    parents = []
+    values = []
+    colors = []
+    custom_text = []
 
-    labels.append("ESTOQUE CAMDA")
+    # Only add leaves (products) — let Plotly auto-calculate parents
+    for _, row in df.iterrows():
+        qtd_sys = int(row["qtd_sistema"])
+        diff = int(row["diferenca"])
+        nota = str(row.get("nota", ""))
+        cat = row["categoria"]
+
+        sn = short_name(str(row["produto"]))
+        if len(sn) > 24:
+            sn = sn[:22] + "..."
+
+        labels.append(sn)
+        parents.append(cat)
+        values.append(max(qtd_sys, 1))
+
+        if diff == 0:
+            colors.append("#00d68f")
+            custom_text.append(f"OK {qtd_sys}")
+        elif diff < 0:
+            colors.append("#ff4757")
+            nota_txt = f" - {nota}" if nota else ""
+            custom_text.append(f"Falta {abs(diff)} (Sis:{qtd_sys} Fis:{qtd_sys+diff}){nota_txt}")
+        else:
+            colors.append("#ffa502")
+            nota_txt = f" - {nota}" if nota else ""
+            custom_text.append(f"Sobra +{diff} (Sis:{qtd_sys} Fis:{qtd_sys+diff}){nota_txt}")
+
+    # Add category nodes
+    for cat in sorted(df["categoria"].unique()):
+        labels.append(cat)
+        parents.append("ESTOQUE")
+        values.append(0)
+        colors.append("#1a2332")
+        custom_text.append("")
+
+    # Root
+    labels.append("ESTOQUE")
     parents.append("")
     values.append(0)
     colors.append("#1a2332")
     custom_text.append("")
 
-    for cat in sorted(df["categoria"].unique()):
-        labels.append(cat)
-        parents.append("ESTOQUE CAMDA")
-        values.append(0)
-        colors.append("#1a2332")
-        custom_text.append("")
+    import json
+    labels_js = json.dumps(labels, ensure_ascii=False)
+    parents_js = json.dumps(parents, ensure_ascii=False)
+    values_js = json.dumps(values)
+    colors_js = json.dumps(colors)
+    text_js = json.dumps(custom_text, ensure_ascii=False)
 
-    for _, row in df.iterrows():
-        qtd_sys = int(row["qtd_sistema"])
-        diff = int(row["diferenca"])
-        nota = str(row.get("nota", ""))
+    html = f"""
+    <div id="treemap" style="width:100%; height:560px;"></div>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script>
+    var data = [{{
+        type: "treemap",
+        labels: {labels_js},
+        parents: {parents_js},
+        values: {values_js},
+        text: {text_js},
+        textinfo: "label+text",
+        marker: {{
+            colors: {colors_js},
+            line: {{ width: 1.5, color: "#0a0f1a" }}
+        }},
+        textfont: {{ family: "monospace", size: 11 }},
+        hovertemplate: "<b>%{{label}}</b><br>%{{text}}<extra></extra>",
+        pathbar: {{ visible: true, thickness: 20, edgeshape: ">" }},
+        tiling: {{ packing: "squarify", pad: 3 }},
+        branchvalues: "total"
+    }}];
 
-        sn = short_name(str(row["produto"]))
-        if len(sn) > 24:
-            sn = sn[:22] + "…"
+    var layout = {{
+        paper_bgcolor: "#0a0f1a",
+        plot_bgcolor: "#0a0f1a",
+        margin: {{ t: 5, l: 2, r: 2, b: 2 }},
+        font: {{ color: "#e0e6ed" }}
+    }};
 
-        labels.append(sn)
-        parents.append(row["categoria"])
-        values.append(max(qtd_sys, 1))
-
-        if diff == 0:
-            colors.append("#00d68f")
-            custom_text.append(f"✓ {qtd_sys}")
-        elif diff < 0:
-            colors.append("#ff4757")
-            nota_txt = f" · {nota}" if nota else ""
-            custom_text.append(f"Falta {abs(diff)} (Sis:{qtd_sys} Fís:{qtd_sys+diff}){nota_txt}")
-        else:
-            colors.append("#ffa502")
-            nota_txt = f" · {nota}" if nota else ""
-            custom_text.append(f"Sobra +{diff} (Sis:{qtd_sys} Fís:{qtd_sys+diff}){nota_txt}")
-
-    fig = go.Figure(go.Treemap(
-        labels=labels, parents=parents, values=values,
-        marker=dict(colors=colors, line=dict(width=1.5, color="#0a0f1a")),
-        textinfo="label+text", text=custom_text,
-        textfont=dict(family="JetBrains Mono, monospace", size=11),
-        hovertemplate="<b>%{label}</b><br>%{text}<extra></extra>",
-        pathbar=dict(visible=True, textfont=dict(family="Outfit", size=11, color="#64748b"),
-                     thickness=20, edgeshape=">"),
-        tiling=dict(packing="squarify", pad=3),
-        branchvalues="total",
-    ))
-    fig.update_layout(
-        paper_bgcolor="#0a0f1a", plot_bgcolor="#0a0f1a",
-        margin=dict(t=5, l=2, r=2, b=2), height=550,
-        font=dict(family="Outfit", color="#e0e6ed"),
-    )
-    return fig
+    Plotly.newPlot("treemap", data, layout, {{
+        displayModeBar: true,
+        displaylogo: false,
+        scrollZoom: true,
+        modeBarButtonsToRemove: ["toImage", "sendDataToCloud"]
+    }});
+    </script>
+    """
+    return html
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -438,18 +475,17 @@ tab_mapa, tab_divergencias, tab_historico = st.tabs(["🗺️ Mapa", "⚠️ Div
 
 # ── TAB: MAPA ────────────────────────────────────────────────────────────────
 with tab_mapa:
-    fig = build_treemap(df, filter_cat)
-    if fig:
-        st.plotly_chart(fig, use_container_width=True, config={
-            "displayModeBar": True,
-            "modeBarButtonsToRemove": ["toImage", "sendDataToCloud"],
-            "displaylogo": False, "scrollZoom": True,
-        })
+    import streamlit.components.v1 as components
+    treemap_html = build_treemap_html(df, filter_cat)
+    if treemap_html:
+        components.html(treemap_html, height=580, scrolling=False)
         st.markdown("""
         <div style="text-align:center; font-size:0.65rem; color:#4a5568; margin-top:-10px;">
             🟢 OK · 🔴 Faltando · 🟡 Sobrando · Toque p/ zoom
         </div>
         """, unsafe_allow_html=True)
+    else:
+        st.info("Nenhum produto para exibir neste filtro.")
 
 # ── TAB: DIVERGÊNCIAS ────────────────────────────────────────────────────────
 with tab_divergencias:
