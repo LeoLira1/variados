@@ -92,7 +92,6 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "camda_estoqu
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
-    # Tabela Mestre — estado atual do estoque, 1 registro por código
     conn.execute("""
         CREATE TABLE IF NOT EXISTS estoque_mestre (
             codigo TEXT PRIMARY KEY,
@@ -107,7 +106,6 @@ def get_db():
             criado_em TEXT NOT NULL
         )
     """)
-    # Log de uploads
     conn.execute("""
         CREATE TABLE IF NOT EXISTS historico_uploads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +155,7 @@ def classify_product(name: str) -> str:
         ("NEMATICIDAS", ["NEMATICIDA"]),
         ("ADUBOS FOLIARES", ["ADUBO FOLIAR"]),
         ("ADUBOS QUÍMICOS", ["ADUBO Q"]),
+        ("ADUBOS CORRETIVOS", ["ADUBO CORRETIVO", "CALCARIO", "CALCÁRIO"]),
         ("ÓLEOS", ["OLEO", "ÓLEO"]),
         ("SEMENTES", ["SEMENTE"]),
         ("ADJUVANTES", ["ADJUVANTE", "ESPALHANTE"]),
@@ -165,6 +164,24 @@ def classify_product(name: str) -> str:
         if any(kw in n for kw in keywords):
             return cat
     return "OUTROS"
+
+
+def normalize_grupo(grupo: str) -> str:
+    """Normaliza o nome do grupo que vem da planilha de vendas para a categoria padrão."""
+    g = str(grupo).strip().upper()
+    mapping = {
+        "ADUBOS FOLIARES": "ADUBOS FOLIARES",
+        "ADUBOS QUIMICOS": "ADUBOS QUÍMICOS",
+        "ADUBOS CORRETIVOS": "ADUBOS CORRETIVOS",
+        "HERBICIDAS": "HERBICIDAS",
+        "FUNGICIDAS": "FUNGICIDAS",
+        "INSETICIDAS": "INSETICIDAS",
+        "NEMATICIDAS": "NEMATICIDAS",
+        "OLEO MINERAL E VEGETAL": "ÓLEOS",
+        "ADJUVANTES": "ADJUVANTES",
+        "SEMENTES": "SEMENTES",
+    }
+    return mapping.get(g, g)
 
 
 def short_name(prod: str) -> str:
@@ -210,62 +227,79 @@ def parse_annotation(nota: str, qtd_sistema: int) -> tuple:
     return (qtd_sistema, 0, str(nota).strip(), "ok")
 
 
-# ── Leitura de Planilha (compartilhada) ──────────────────────────────────────
+# ── Detecção de Formato ─────────────────────────────────────────────────────
 
-def read_excel_to_records(uploaded_file) -> tuple:
+def detect_format(df_raw: pd.DataFrame) -> str:
     """
-    Lê uma planilha XLSX e retorna (ok, msg_ou_records).
-    Se ok=True, retorna lista de dicts com as colunas padronizadas.
-    Se ok=False, retorna mensagem de erro.
+    Detecta se a planilha é formato ESTOQUE (mestre) ou VENDAS (parcial).
+    Retorna: 'estoque', 'vendas', ou 'desconhecido'
     """
-    try:
-        df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
-    except Exception as e:
-        return (False, f"Erro ao ler arquivo: {e}")
+    for i in range(min(10, len(df_raw))):
+        vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
+        row_text = " ".join(vals)
 
-    # Localiza cabeçalho
+        # Formato VENDAS: tem "QTDD - VENDIDA" ou "QTDD ESTOQUE" ou "GRUPO DE PRODUTO"
+        if any(x in row_text for x in ["QTDD - VENDIDA", "QTDD ESTOQUE", "GRUPO DE PRODUTO"]):
+            return "vendas"
+
+        # Formato ESTOQUE: tem "PRODUTO" + "QUANTIDADE" na mesma linha
+        has_produto = any("PRODUTO" == v for v in vals)
+        has_qtd = any("QUANTIDADE" in v or v == "QTD" for v in vals)
+        if has_produto and has_qtd:
+            return "estoque"
+
+    return "desconhecido"
+
+
+# ── Parser: Formato Estoque (Mestre) ─────────────────────────────────────────
+
+def parse_estoque_format(df_raw: pd.DataFrame) -> tuple:
+    """
+    Formato: LOCAL | Código | Produto | QUANTIDADE | CUSTO UNITÁRIO
+    Cabeçalho na row 5 tipicamente.
+    """
     header_idx = None
-    for i, row in df_raw.iterrows():
-        vals = [str(v).strip().upper() for v in row.tolist()]
-        if any(v == "PRODUTO" for v in vals) and any("QUANTIDADE" in v or v == "QTD" for v in vals):
+    for i in range(min(15, len(df_raw))):
+        vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
+        has_produto = any("PRODUTO" == v for v in vals)
+        has_qtd = any("QUANTIDADE" in v or v == "QTD" for v in vals)
+        if has_produto and has_qtd:
             header_idx = i
             break
 
     if header_idx is None:
-        return (False, "Cabeçalho não encontrado. Preciso de colunas 'Produto' e 'Quantidade'.")
+        return (False, "Cabeçalho não encontrado no formato estoque. Preciso de 'Produto' e 'Quantidade'.")
 
     df = df_raw.iloc[header_idx + 1:].copy()
     raw_cols = df_raw.iloc[header_idx].tolist()
     df.columns = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(raw_cols)]
 
-    # Detecta colunas
-    col_prod, col_qtd, col_cod, col_nota = None, None, None, None
+    # Mapeia colunas
+    col_map = {}
     for c in df.columns:
-        cu = c.upper()
-        if "PRODUTO" in cu and col_prod is None:
-            col_prod = c
-        elif ("QUANTIDADE" in cu or cu == "QTD") and col_qtd is None:
-            col_qtd = c
-        elif ("CÓDIGO" in cu or "CODIGO" in cu or cu == "COD") and col_cod is None:
-            col_cod = c
-        if ("OBS" in cu or "NOTA" in cu or "DIFEREN" in cu) and col_nota is None:
-            col_nota = c
+        cu = c.upper().strip()
+        if cu == "PRODUTO" and "produto" not in col_map:
+            col_map["produto"] = c
+        elif ("QUANTIDADE" in cu or cu == "QTD") and "qtd" not in col_map:
+            col_map["qtd"] = c
+        elif ("CÓDIGO" in cu or "CODIGO" in cu or cu == "COD" or cu == "CÓDIGO") and "codigo" not in col_map:
+            col_map["codigo"] = c
+        elif cu == "LOCAL" and "local" not in col_map:
+            col_map["local"] = c
+        elif ("OBS" in cu or "NOTA" in cu or "DIFEREN" in cu) and "nota" not in col_map:
+            col_map["nota"] = c
 
-    # Fallback: se não achou coluna de nota, usa a 5ª coluna
-    if col_nota is None and len(df.columns) >= 5:
-        col_nota = df.columns[4]
-
-    if col_prod is None or col_qtd is None:
-        return (False, "Colunas obrigatórias 'Produto' e 'Quantidade' não encontradas.")
+    if "produto" not in col_map or "qtd" not in col_map:
+        return (False, f"Colunas detectadas: {list(df.columns)} — falta 'Produto' ou 'Quantidade'.")
 
     records = []
     for _, row in df.iterrows():
-        produto = str(row.get(col_prod, "")).strip()
-        if produto.upper() in ["", "NAN", "NONE", "TOTAL", "PRODUTO"]:
+        produto = str(row.get(col_map["produto"], "")).strip()
+        if produto.upper() in ["", "NAN", "NONE", "TOTAL", "PRODUTO", "ROLLUP"]:
             continue
 
         try:
-            raw_val = row.get(col_qtd)
+            raw_val = row.get(col_map["qtd"])
             if pd.isna(raw_val):
                 continue
             qtd_sistema = int(float(raw_val))
@@ -274,24 +308,22 @@ def read_excel_to_records(uploaded_file) -> tuple:
         except (ValueError, TypeError):
             continue
 
-        # Código — gera um baseado no nome se não existir
+        # Código
         codigo = ""
-        if col_cod:
-            codigo = str(row.get(col_cod, "")).strip()
+        if "codigo" in col_map:
+            codigo = str(row.get(col_map["codigo"], "")).strip()
             if codigo.upper() in ["NAN", "NONE", ""]:
                 codigo = ""
 
         if not codigo:
-            # Gera código determinístico a partir do nome do produto
             codigo = "AUTO_" + re.sub(r"[^A-Z0-9]", "", produto.upper())[:20]
 
-        # Nota/Observação
+        # Nota
         nota_raw = ""
-        if col_nota:
-            nota_raw = str(row.get(col_nota, "")).strip()
+        if "nota" in col_map:
+            nota_raw = str(row.get(col_map["nota"], "")).strip()
             if nota_raw.upper() in ["NAN", "NONE"]:
                 nota_raw = ""
-            # Se é só um número puro, ignora (provavelmente é outra coluna numérica)
             if re.match(r"^\d+([.,]\d+)?$", nota_raw):
                 nota_raw = ""
 
@@ -310,9 +342,171 @@ def read_excel_to_records(uploaded_file) -> tuple:
         })
 
     if not records:
-        return (False, "Nenhum dado válido encontrado na planilha.")
+        return (False, "Nenhum dado válido encontrado na planilha de estoque.")
 
     return (True, records)
+
+
+# ── Parser: Formato Vendas (Parcial) ─────────────────────────────────────────
+
+def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
+    """
+    Formato: GRUPO DE PRODUTO 2 | PRODUTO | QTDD - VENDIDA | QTDD ESTOQUE | CUSTO UNIT.
+    Onde PRODUTO = "CODIGO - NOME DO PRODUTO"
+    E GRUPO aparece em linhas separadas como cabeçalho de seção.
+    A coluna de obs/nota pode ter "falta X ...", "sobra X", etc.
+    """
+    header_idx = None
+    for i in range(min(15, len(df_raw))):
+        vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
+        row_text = " ".join(vals)
+        if "PRODUTO" in vals and ("QTDD" in row_text or "VENDIDA" in row_text):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        return (False, "Cabeçalho não encontrado no formato vendas.")
+
+    df = df_raw.iloc[header_idx + 1:].copy()
+    raw_cols = df_raw.iloc[header_idx].tolist()
+    df.columns = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(raw_cols)]
+
+    # Mapeia colunas
+    col_grupo = None
+    col_produto = None
+    col_qtd_vendida = None
+    col_qtd_estoque = None
+    col_nota = None
+
+    for c in df.columns:
+        cu = c.upper().strip()
+        if "GRUPO" in cu and col_grupo is None:
+            col_grupo = c
+        elif cu == "PRODUTO" and col_produto is None:
+            col_produto = c
+        elif "VENDIDA" in cu and col_qtd_vendida is None:
+            col_qtd_vendida = c
+        elif "ESTOQUE" in cu and col_qtd_estoque is None:
+            col_qtd_estoque = c
+        elif ("CUSTO" in cu) and col_nota is None:
+            # A última coluna (CUSTO UNIT.) na verdade pode ter as obs
+            col_nota = c
+
+    if col_produto is None:
+        return (False, f"Coluna 'PRODUTO' não encontrada. Colunas: {list(df.columns)}")
+
+    # Precisamos de pelo menos qtd_estoque OU qtd_vendida
+    if col_qtd_estoque is None and col_qtd_vendida is None:
+        return (False, "Nenhuma coluna de quantidade encontrada.")
+
+    records = []
+    current_grupo = "OUTROS"
+
+    for _, row in df.iterrows():
+        # Atualiza grupo corrente
+        if col_grupo:
+            g = str(row.get(col_grupo, "")).strip()
+            if g and g.upper() not in ["NAN", "NONE", ""]:
+                current_grupo = g
+
+        # Produto no formato "CODIGO - NOME"
+        raw_prod = str(row.get(col_produto, "")).strip()
+        if raw_prod.upper() in ["", "NAN", "NONE", "ROLLUP"]:
+            continue
+
+        # Extrai código e nome do produto
+        m = re.match(r"^(\d+)\s*-\s*(.+)$", raw_prod)
+        if m:
+            codigo = m.group(1).strip()
+            produto = m.group(2).strip()
+        else:
+            # Sem código embutido
+            codigo = "AUTO_" + re.sub(r"[^A-Z0-9]", "", raw_prod.upper())[:20]
+            produto = raw_prod
+
+        # Quantidade do estoque (preferência) ou vendida
+        qtd_sistema = 0
+        if col_qtd_estoque:
+            try:
+                val = row.get(col_qtd_estoque)
+                if pd.notna(val):
+                    qtd_sistema = int(float(val))
+            except (ValueError, TypeError):
+                pass
+
+        # Se qtd_estoque = 0, tenta pegar vendida como fallback
+        if qtd_sistema <= 0 and col_qtd_vendida:
+            try:
+                val = row.get(col_qtd_vendida)
+                if pd.notna(val):
+                    qtd_sistema = int(float(val))
+            except (ValueError, TypeError):
+                pass
+
+        if qtd_sistema <= 0:
+            continue
+
+        # Nota/Observação — pode estar na coluna de custo
+        nota_raw = ""
+        if col_nota:
+            nota_val = str(row.get(col_nota, "")).strip()
+            if nota_val.upper() not in ["NAN", "NONE", ""]:
+                # Se não é um número puro, é uma observação
+                if not re.match(r"^\d+([.,]\d+)?$", nota_val):
+                    nota_raw = nota_val
+
+        categoria = normalize_grupo(current_grupo)
+        # Se a categoria do grupo não é boa, tenta inferir do nome
+        if categoria in ["OUTROS", ""]:
+            categoria = classify_product(produto)
+
+        qtd_fisica, diferenca, observacao, status = parse_annotation(nota_raw, qtd_sistema)
+
+        records.append({
+            "codigo": codigo,
+            "produto": produto,
+            "categoria": categoria,
+            "qtd_sistema": qtd_sistema,
+            "qtd_fisica": qtd_fisica,
+            "diferenca": diferenca,
+            "nota": observacao,
+            "status": status,
+        })
+
+    if not records:
+        return (False, "Nenhum dado válido encontrado na planilha de vendas.")
+
+    return (True, records)
+
+
+# ── Leitura Unificada ────────────────────────────────────────────────────────
+
+def read_excel_to_records(uploaded_file) -> tuple:
+    """
+    Lê uma planilha XLSX, detecta o formato automaticamente e retorna records.
+    """
+    try:
+        df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
+    except Exception as e:
+        return (False, f"Erro ao ler arquivo: {e}")
+
+    fmt = detect_format(df_raw)
+
+    if fmt == "vendas":
+        return parse_vendas_format(df_raw)
+    elif fmt == "estoque":
+        return parse_estoque_format(df_raw)
+    else:
+        # Tenta estoque primeiro, depois vendas
+        ok, result = parse_estoque_format(df_raw)
+        if ok:
+            return (ok, result)
+        ok2, result2 = parse_vendas_format(df_raw)
+        if ok2:
+            return (ok2, result2)
+        return (False, "Formato não reconhecido. Colunas esperadas:\n"
+                       "• Estoque: 'Produto' + 'Quantidade'\n"
+                       "• Vendas: 'PRODUTO' + 'QTDD ESTOQUE' ou 'QTDD - VENDIDA'")
 
 
 # ── Upload Mestre (carga inicial / substituição total) ───────────────────────
@@ -326,7 +520,6 @@ def upload_mestre(uploaded_file) -> tuple:
     conn = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Limpa o mestre antes de carregar
     conn.execute("DELETE FROM estoque_mestre")
 
     for r in records:
@@ -365,13 +558,11 @@ def upload_parcial(uploaded_file) -> tuple:
     atualizados = 0
 
     for r in records:
-        # Verifica se já existe
         existing = conn.execute(
             "SELECT codigo FROM estoque_mestre WHERE codigo = ?", (r["codigo"],)
         ).fetchone()
 
         if existing:
-            # UPDATE — atualiza só os campos da contagem
             conn.execute("""
                 UPDATE estoque_mestre SET
                     produto = ?,
@@ -391,7 +582,6 @@ def upload_parcial(uploaded_file) -> tuple:
             ))
             atualizados += 1
         else:
-            # INSERT — produto novo que não estava no mestre
             conn.execute("""
                 INSERT INTO estoque_mestre
                     (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
@@ -463,7 +653,6 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             note = str(r.get("nota", "")) if pd.notnull(r.get("nota")) else ""
             cod = str(r.get("codigo", ""))
 
-            # Cores e info
             if stat == "danificado":
                 bg, txt = "#a55eea", "#fff"
                 nums = re.findall(r"\d+", note)
@@ -479,7 +668,6 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
                 bg, txt = "#ffa502", "#fff"
                 info = f"{qf} (S {diff})"
 
-            # Indicador de "sem contagem recente"
             contagem = str(r.get("ultima_contagem", ""))
             border_extra = ""
             if not contagem or contagem in ["", "nan", "None"]:
@@ -533,7 +721,6 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     if not has_mestre:
         st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
 
-    # Seleção do tipo de upload
     opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
     opcao_parcial = "PARCIAL (atualizar contagem do dia)"
     upload_mode = st.radio(
@@ -546,7 +733,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     is_mestre_upload = "MESTRE" in upload_mode
 
     if is_mestre_upload:
-        st.caption("O upload mestre substitui todo o estoque. Use para carga inicial ou recomecar do zero.")
+        st.caption("O upload mestre substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
     else:
         st.caption("O upload parcial atualiza apenas os produtos presentes na planilha. Os demais permanecem inalterados.")
 
@@ -558,6 +745,26 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     )
 
     if uploaded:
+        # Preview: mostra o que será importado
+        with st.expander("👁️ Preview do arquivo", expanded=False):
+            try:
+                ok_preview, result_preview = read_excel_to_records(uploaded)
+                uploaded.seek(0)  # Reset file pointer after preview
+                if ok_preview:
+                    df_preview = pd.DataFrame(result_preview)
+                    st.caption(f"Formato detectado · {len(result_preview)} produtos encontrados")
+                    n_div_preview = sum(1 for r in result_preview if r["status"] != "ok")
+                    if n_div_preview:
+                        st.warning(f"⚠️ {n_div_preview} divergência(s) detectada(s)")
+                    st.dataframe(
+                        df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
+                        hide_index=True, use_container_width=True, height=250,
+                    )
+                else:
+                    st.error(result_preview)
+            except Exception as e:
+                st.error(f"Erro no preview: {e}")
+
         if st.button("🚀 Processar", type="primary"):
             with st.spinner("Processando..."):
                 if is_mestre_upload:
@@ -598,7 +805,6 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 if has_mestre:
     df_mestre = get_current_stock()
 
-    # Busca
     search_term = st.text_input(
         "🔍 Buscar no Mestre",
         placeholder="Nome ou Código...",
@@ -613,13 +819,11 @@ if has_mestre:
         )
         df_view = df_view[mask]
 
-    # Stats
     n_ok = len(df_view[df_view["status"] == "ok"])
     n_falta = len(df_view[df_view["status"] == "falta"])
     n_sobra = len(df_view[df_view["status"] == "sobra"])
     n_danificado = len(df_view[df_view["status"] == "danificado"])
 
-    # Produtos nunca contados (sem ultima_contagem)
     n_sem_contagem = len(
         df_view[
             (df_view["ultima_contagem"].isna())
@@ -656,11 +860,9 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    # Filtro por categoria
     cats = ["TODOS"] + sorted(df_view["categoria"].unique().tolist())
     f_cat = st.radio("Filtro", cats, horizontal=True, label_visibility="collapsed")
 
-    # Tabs
     t1, t2, t3, t4, t5 = st.tabs([
         "🗺️ Mapa Estoque",
         "⚠️ Divergências",
